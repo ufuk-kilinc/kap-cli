@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -41,11 +42,16 @@ _ENDPOINTS: dict[str, str] = {
 
 
 _URL_W = max(len(url) for url in _ENDPOINTS.values())
+# Align endpoint + summary into columns only when the window is wide enough; on a
+# narrow terminal render compact so rows wrap cleanly instead of forcing the panel
+# wider than the window (read once at startup).
+_WIDE = shutil.get_terminal_size((80, 24)).columns >= 100
 
 
 def _help(name: str, summary: str) -> str:
-    """Commands-panel short help: the endpoint (yellow, padded to a column) + a summary."""
-    return f"[yellow]{_ENDPOINTS[name].ljust(_URL_W)}[/yellow]  {summary}"
+    """Commands-panel short help: endpoint (yellow) + summary; columnar only when wide."""
+    url = _ENDPOINTS[name].ljust(_URL_W) if _WIDE else _ENDPOINTS[name]
+    return f"[yellow]{url}[/yellow]  {summary}"
 
 
 _EPILOG = (
