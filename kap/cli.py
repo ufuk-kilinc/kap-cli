@@ -108,7 +108,14 @@ def _save_bytes(
 
 @app.command("last-index")
 def last_index(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
-    """Latest published disclosure id (use as a polling cursor)."""
+    """Latest published disclosure id (a market-wide cursor).
+
+    Calls `GET /api/vyk/lastDisclosureIndex`. No inputs. Returns a single number —
+    the id of the newest disclosure across all of KAP. Feed it to `disclosures` as
+    `--index`, or poll it to detect new filings.
+
+    Example: `kap last-index`
+    """
     _run(env, fmt, out, lambda c: c.last_disclosure_index(), verbose=verbose)
 
 
@@ -123,7 +130,14 @@ def disclosures(
     out: OutOpt = None,
     verbose: VerboseOpt = False,
 ):
-    """First 50 disclosures from --index onward (optionally filtered)."""
+    """First 50 disclosures from --index onward (optionally filtered).
+
+    Calls `GET /api/vyk/disclosures`. Required: `--index` (a disclosureIndex, e.g.
+    from `last-index`); returns 50 disclosures from there. Optional filters:
+    `--type`, `--class` (e.g. `FR` for financial reports), `--company-id`.
+
+    Example: `kap disclosures --index 1619914 --class FR`
+    """
     _run(
         env,
         fmt,
@@ -145,7 +159,16 @@ def disclosure_detail(
     out: OutOpt = None,
     verbose: VerboseOpt = False,
 ):
-    """Full detail for one disclosure (base64 bodies decoded to readable text)."""
+    """Full detail for one disclosure.
+
+    Calls `GET /api/vyk/disclosureDetail/{index}`. Required argument: the disclosure
+    index (from `disclosures`). Use `--file-type html` to get the readable
+    announcement body (decoded to text); the default `--file-type data` returns
+    structured fields only (subject/summary/links/attachments). `--sub-report`
+    picks one sub-report.
+
+    Example: `kap disclosure-detail 1619914 --file-type html`
+    """
     _run(env, fmt, out, lambda c: c.disclosure_detail(index, file_type, sub_report), decode=True, verbose=verbose)
 
 
@@ -156,19 +179,37 @@ def download_attachment(
     env: EnvOpt = None,
     verbose: VerboseOpt = False,
 ):
-    """Download a disclosure attachment PDF (Java envelope auto-unwrapped)."""
+    """Download a disclosure attachment PDF (Java envelope auto-unwrapped).
+
+    Calls `GET /api/vyk/downloadAttachment/{id}`. Required argument: the attachment
+    id — the last path segment of an `attachmentUrls[].url` shown by
+    `disclosure-detail`. Saves to `--out` (default `<id>.pdf`).
+
+    Example: `kap download-attachment 1234567 --out report.pdf`
+    """
     _save_bytes(env, out, lambda c: c.download_attachment(attachment_id), f"{attachment_id}.pdf", verbose=verbose)
 
 
 @app.command()
 def members(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
-    """All KAP-member companies."""
+    """All KAP-member companies (id, title, stock code, type).
+
+    Calls `GET /api/vyk/members`. No inputs. The `id` here is the `companyId` used by
+    `disclosures --company-id`.
+
+    Example: `kap members --out members.csv`
+    """
     _run(env, fmt, out, lambda c: c.members(), verbose=verbose)
 
 
 @app.command()
 def funds(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
-    """All funds."""
+    """All funds.
+
+    Calls `GET /api/vyk/funds`. No inputs. A fund's `id` feeds `fund-detail`.
+
+    Example: `kap funds --format json`
+    """
     _run(env, fmt, out, lambda c: c.funds(), verbose=verbose)
 
 
@@ -180,19 +221,34 @@ def fund_detail(
     out: OutOpt = None,
     verbose: VerboseOpt = False,
 ):
-    """General-info sections for one fund."""
+    """General-info sections for one fund.
+
+    Calls `GET /api/vyk/fundDetail/{id}`. Required argument: the fund id (from `funds`).
+
+    Example: `kap fund-detail 5900`
+    """
     _run(env, fmt, out, lambda c: c.fund_detail(fund_id), verbose=verbose)
 
 
 @app.command("member-securities")
 def member_securities(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
-    """Listed (IGS) companies with their securities (ISIN-level)."""
+    """Listed (IGS) companies with their securities (ISIN-level).
+
+    Calls `GET /api/vyk/memberSecurities`. No inputs.
+
+    Example: `kap member-securities --out securities.csv`
+    """
     _run(env, fmt, out, lambda c: c.member_securities(), verbose=verbose)
 
 
 @app.command("blocked-disclosures")
 def blocked_disclosures(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
-    """Disclosures blocked from access in KAP."""
+    """Disclosures blocked from access in KAP.
+
+    Calls `GET /api/vyk/blockedDisclosures`. No inputs.
+
+    Example: `kap blocked-disclosures`
+    """
     _run(env, fmt, out, lambda c: c.blocked_disclosures(), verbose=verbose)
 
 
@@ -204,7 +260,13 @@ def ca_event_status(
     out: OutOpt = None,
     verbose: VerboseOpt = False,
 ):
-    """Corporate-action (rights-usage) process status for the given ref ids."""
+    """Corporate-action (rights-usage) process status for the given ref ids.
+
+    Calls `GET /api/vyk/caEventStatus?processRefId=...`. Required: one or more
+    process ref ids, space-separated.
+
+    Example: `kap ca-event-status 111 222`
+    """
     _run(env, fmt, out, lambda c: c.ca_event_status(ref_ids), verbose=verbose)
 
 
@@ -217,7 +279,14 @@ def raw(
     out: OutOpt = None,
     verbose: VerboseOpt = False,
 ):
-    """Raw exploration probe: call any relative path and dump the response."""
+    """Raw exploration probe: call any relative path and dump the response.
+
+    Calls `GET /<path>` on the active host (no retry, no parsing — returns status +
+    body for inspection). Required argument: the relative path. Repeat `--query
+    key=value` for query params.
+
+    Example: `kap raw api/vyk/members --query mkkMemberOid=4028`
+    """
     params: dict[str, str] = {}
     for item in query or []:
         if "=" not in item:
