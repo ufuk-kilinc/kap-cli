@@ -4,7 +4,7 @@ import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Literal, Optional
 
 import typer
 from rich.console import Console
@@ -127,7 +127,7 @@ def disclosures(
 @app.command("disclosure-detail")
 def disclosure_detail(
     index: Annotated[int, typer.Argument(help="Disclosure index.")],
-    file_type: Annotated[str, typer.Option("--file-type", help="data | html.")] = "data",
+    file_type: Annotated[Literal["data", "html"], typer.Option("--file-type", help="data | html.")] = "data",
     sub_report: Annotated[Optional[str], typer.Option("--sub-report", help="subReportList id.")] = None,
     env: EnvOpt = None,
     fmt: FormatOpt = None,

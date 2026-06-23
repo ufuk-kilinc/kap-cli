@@ -154,6 +154,12 @@ def test_api_error_goes_to_stderr_not_stdout(fake_client, monkeypatch):
     assert "ER001" not in result.stdout and "denied" not in result.stdout
 
 
+def test_invalid_file_type_rejected(fake_client):
+    result = runner.invoke(cli.app, ["disclosure-detail", "7", "--file-type", "pdf"])
+    assert result.exit_code != 0
+    assert "pdf" in (result.stderr + result.stdout)
+
+
 def test_invalid_format_fails_fast(fake_client):
     # The fake client never errors, so a non-zero exit proves --format was
     # validated before the (mocked) call ran.

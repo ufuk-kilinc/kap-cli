@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
 import httpx
 
@@ -75,7 +75,7 @@ class KapClient:
         return self._get_list("api/vyk/disclosures", params)
 
     def disclosure_detail(
-        self, index: int, file_type: str = "data", sub_report: str | None = None
+        self, index: int, file_type: Literal["data", "html"] = "data", sub_report: str | None = None
     ) -> JsonObj | None:
         params: dict[str, str] = {"fileType": file_type}
         if sub_report:
