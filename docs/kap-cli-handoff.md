@@ -12,11 +12,14 @@
 - **What:** a standalone **Python CLI (`kap`)** that exposes **every** endpoint of the KAP Veri Yayın
   Servisi REST API (MKK / Borsa İstanbul) as a subcommand, for the **research team** to call directly.
 - **Where:** `C:\dev\source\tuneup\kap-cli` — its own git repo (NOT part of `tuneup-api`). Branch `main`.
-- **Status:** **COMPLETE and merged to `main`** (merge commit `a61a307`). 52 tests passing.
+- **Status:** **COMPLETE, merged to `main`, pushed to origin.** 76 tests passing.
   Built brainstorm → spec → plan → 6 TDD tasks (subagent-driven), each spec+quality reviewed, plus a
-  final whole-branch Opus review (verdict: **ready to merge**). A background security review finding was
-  fixed (atomic `0o600` token-cache write).
-- **No git remote yet** — local-only. Push to GitHub when ready (see §9).
+  final whole-branch Opus review. A background security review finding was fixed (atomic `0o600`
+  token-cache write). Then a full **A+ hardening pass** (commit `1ed289e`): `KapResponseError` for
+  2xx-but-malformed, guarded JSON decode, non-PDF download reject, single `_errors` policy (DRY + clean
+  `OSError`), honest types (`JsonObj`/`RawResponse`/`TokenCache`/`Literal`s), Unix CSV, fail-fast
+  `--format`/`--file-type`, strict `raw --query` — independent Opus verification verdict: **A+**.
+- **Remote:** private `https://github.com/ufuk-kilinc/kap-cli` (`main` == origin).
 - **NOT yet run against the live KAP API.** All logic is unit-tested against the documented contract via
   mocked HTTP (`respx`). A first **live smoke** from an allowlisted IP with a real key is the #1 open task
   (see §8).
@@ -160,11 +163,14 @@ Mirrors the C# client. The MKK docs are incomplete/misleading; trust this:
 
 ## 7. Verification done
 
-- **52 unit tests passing**, pristine output (no warnings). Coverage: config resolution, error-envelope
-  parsing (+ empty-message edge), token mint/exp/skew/disk-reuse-across-instances/invalidate, all client
-  endpoints incl. raw-auth-header assertion + retry-once over ER004/006/012 + ER005→empty/None + attachment
-  envelope strip + connectivity error, render table/json/csv + format inference + ISO-8859-9 decode, CLI
-  commands incl. post-command options + errors-on-stderr (not stdout) + clean config-error exit.
+- **76 unit tests passing**, pristine output (no warnings). Coverage: config resolution, error-envelope
+  parsing (+ empty-message edge), token mint/exp/skew/disk-reuse-across-instances/invalidate + mint
+  failure/non-JSON/no-token, all client endpoints incl. raw-auth-header assertion + retry-once over
+  ER004/006/012 + ER005→empty/None + attachment envelope strip + **non-PDF reject** + **non-JSON-2xx
+  reject** + path construction (fund_detail/member_securities/blocked) + `file_type` forwarding +
+  connectivity error, render table/json/csv + format inference + validation + ISO-8859-9 decode +
+  base64-fail→None + Unix CSV, CLI commands incl. post-command options + **errors-on-stderr (proven not
+  stdout)** + clean config-error/OSError exit + fail-fast `--format`/`--file-type` + strict `raw --query`.
 - **Manual smokes** (no key set): `kap --help` clean under cp1252; `kap members --format json` →
   clean `Error: Missing API key…` on stderr, exit 1, no traceback; `--verbose` adds a traceback.
 - **Reviews:** every task spec+quality reviewed by a fresh subagent (2 fix rounds on the CLI task);
@@ -180,17 +186,15 @@ Mirrors the C# client. The MKK docs are incomplete/misleading; trust this:
    `kap members --format json | head`, a `kap disclosure-detail <id>`, and a `kap download-attachment <id>
    --out test.pdf` (verify the PDF opens). Watch for: real error-envelope shapes, `lastDisclosureIndex`
    JSON key casing, `disclosureDetail` body field actually being `htmlMessages[].tr/en` (the decode target).
-2. **Git remote + push** (see §9) — currently local-only.
-3. **Distribute to the team** — share the clone+`pip install -e .`+`.env` steps; confirm each researcher
+2. **Distribute to the team** — share the clone+`pip install -e .`+`.env` steps; confirm each researcher
    is on an allowlisted network.
-4. **Deferred minors** (none block; sweep if desired): `_extract_pdf` silently returns bytes when no `%PDF`
-   marker (add a stderr warning); `last_disclosure_index` parse-guard uses `KapApiError(200,…)` (cosmetic);
-   `to_csv([])` → degenerate empty CSV; `decode_disclosure_bodies` mutates input in place; remove unused
-   `import pytest` in `tests/test_auth.py`; add tests for `fund_detail`/`member_securities`/
-   `blocked_disclosures` path construction + the Rich-table output path.
-5. **Possible future (only if asked):** a `--raw`/no-decode flag on `disclosure-detail`; pagination helper
+3. **Possible future (only if asked):** a `--raw`/no-decode flag on `disclosure-detail`; pagination helper
    for `disclosures` (server returns 50 from an index); column selection for table/csv. All YAGNI until
    the team asks.
+
+> The review "deferred minors" (non-PDF passthrough, `KapApiError(200,…)`, empty-CSV, base64-fail
+> handling, missing path/forwarding tests, etc.) were all **resolved in the A+ hardening pass** (`1ed289e`)
+> — see §0. Git remote + push: **done**.
 
 ---
 
