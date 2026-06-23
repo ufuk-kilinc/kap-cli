@@ -106,7 +106,7 @@ def _save_bytes(
         print(f"Saved {len(data)} bytes to {target}")
 
 
-@app.command("last-index")
+@app.command("last-index", short_help="Latest disclosure id (cursor). GET /api/vyk/lastDisclosureIndex")
 def last_index(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """Latest published disclosure id (a market-wide cursor).
 
@@ -119,7 +119,7 @@ def last_index(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, ve
     _run(env, fmt, out, lambda c: c.last_disclosure_index(), verbose=verbose)
 
 
-@app.command()
+@app.command(short_help="First 50 from --index (filterable). GET /api/vyk/disclosures")
 def disclosures(
     index: Annotated[int, typer.Option("--index", help="Start disclosure index (required).")],
     type_: Annotated[Optional[str], typer.Option("--type", help="disclosureType filter.")] = None,
@@ -149,7 +149,7 @@ def disclosures(
     )
 
 
-@app.command("disclosure-detail")
+@app.command("disclosure-detail", short_help="One disclosure's full detail. GET /api/vyk/disclosureDetail/{index}")
 def disclosure_detail(
     index: Annotated[int, typer.Argument(help="Disclosure index.")],
     file_type: Annotated[Literal["data", "html"], typer.Option("--file-type", help="data | html.")] = "data",
@@ -172,7 +172,7 @@ def disclosure_detail(
     _run(env, fmt, out, lambda c: c.disclosure_detail(index, file_type, sub_report), decode=True, verbose=verbose)
 
 
-@app.command("download-attachment")
+@app.command("download-attachment", short_help="Download an attachment PDF. GET /api/vyk/downloadAttachment/{id}")
 def download_attachment(
     attachment_id: Annotated[str, typer.Argument(help="Attachment id (last path segment of an attachment url).")],
     out: OutOpt = None,
@@ -190,7 +190,7 @@ def download_attachment(
     _save_bytes(env, out, lambda c: c.download_attachment(attachment_id), f"{attachment_id}.pdf", verbose=verbose)
 
 
-@app.command()
+@app.command(short_help="All KAP-member companies. GET /api/vyk/members")
 def members(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """All KAP-member companies (id, title, stock code, type).
 
@@ -202,7 +202,7 @@ def members(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbo
     _run(env, fmt, out, lambda c: c.members(), verbose=verbose)
 
 
-@app.command()
+@app.command(short_help="All funds. GET /api/vyk/funds")
 def funds(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """All funds.
 
@@ -213,7 +213,7 @@ def funds(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose
     _run(env, fmt, out, lambda c: c.funds(), verbose=verbose)
 
 
-@app.command("fund-detail")
+@app.command("fund-detail", short_help="One fund's info sections. GET /api/vyk/fundDetail/{id}")
 def fund_detail(
     fund_id: Annotated[int, typer.Argument(help="Fund id.")],
     env: EnvOpt = None,
@@ -230,7 +230,7 @@ def fund_detail(
     _run(env, fmt, out, lambda c: c.fund_detail(fund_id), verbose=verbose)
 
 
-@app.command("member-securities")
+@app.command("member-securities", short_help="Listed companies' securities (ISIN). GET /api/vyk/memberSecurities")
 def member_securities(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """Listed (IGS) companies with their securities (ISIN-level).
 
@@ -241,7 +241,7 @@ def member_securities(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = N
     _run(env, fmt, out, lambda c: c.member_securities(), verbose=verbose)
 
 
-@app.command("blocked-disclosures")
+@app.command("blocked-disclosures", short_help="Blocked disclosures. GET /api/vyk/blockedDisclosures")
 def blocked_disclosures(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """Disclosures blocked from access in KAP.
 
@@ -252,7 +252,7 @@ def blocked_disclosures(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt =
     _run(env, fmt, out, lambda c: c.blocked_disclosures(), verbose=verbose)
 
 
-@app.command("ca-event-status")
+@app.command("ca-event-status", short_help="Corporate-action status. GET /api/vyk/caEventStatus")
 def ca_event_status(
     ref_ids: Annotated[list[int], typer.Argument(help="One or more processRefId values.")],
     env: EnvOpt = None,
@@ -270,7 +270,7 @@ def ca_event_status(
     _run(env, fmt, out, lambda c: c.ca_event_status(ref_ids), verbose=verbose)
 
 
-@app.command()
+@app.command(short_help="Probe any relative path. GET /<path>")
 def raw(
     path: Annotated[str, typer.Argument(help="Relative path, e.g. api/vyk/members.")],
     query: Annotated[Optional[list[str]], typer.Option("--query", help="Query as key=value (repeatable).")] = None,
