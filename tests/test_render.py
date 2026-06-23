@@ -1,6 +1,8 @@
 import base64
 import json
 
+import pytest
+
 from kap.render import (
     decode_disclosure_bodies,
     output,
@@ -66,3 +68,28 @@ def test_output_writes_csv_file(tmp_path):
 def test_output_scalar_to_stdout(capsys):
     output(42)
     assert capsys.readouterr().out.strip() == "42"
+
+
+def test_resolve_format_rejects_unknown():
+    with pytest.raises(ValueError, match="Unknown format"):
+        resolve_format("jsonn", None, [{"a": 1}])
+
+
+def test_resolve_format_flat_dict_defaults_to_json():
+    assert resolve_format(None, None, {"a": 1}) == "json"
+
+
+def test_to_csv_uses_unix_line_endings():
+    text = to_csv([{"a": 1}, {"a": 2}])
+    assert "\r" not in text
+    assert text.splitlines() == ["a", "1", "2"]
+
+
+def test_to_csv_empty_list_is_blank():
+    assert to_csv([]).strip() == ""
+
+
+def test_decode_disclosure_bodies_marks_undecodable_as_none():
+    detail = {"htmlMessages": [{"id": 1, "tr": "!!!not base64!!!", "en": None}]}
+    out = decode_disclosure_bodies(detail)
+    assert out["htmlMessages"][0]["tr_text"] is None

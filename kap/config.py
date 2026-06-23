@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+Environment = Literal["test", "production"]
 
 
 @dataclass(frozen=True)
 class ResolvedConfig:
-    env: str
+    env: Environment
     base_url: str
     api_key: str
     token_refresh_skew_seconds: int

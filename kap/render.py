@@ -6,9 +6,13 @@ import io
 import json
 import re
 from pathlib import Path
+from typing import Any, Literal
 
 from rich.console import Console
 from rich.table import Table
+
+Format = Literal["table", "json", "csv"]
+_FORMATS: tuple[Format, ...] = ("table", "json", "csv")
 
 _console = Console()
 _STYLE_SCRIPT = re.compile(r"<(style|script)\b[^>]*>.*?</\1>", re.IGNORECASE | re.DOTALL)
@@ -16,13 +20,20 @@ _TAGS = re.compile(r"<[^>]+>")
 _WS = re.compile(r"\s+")
 
 
-def _is_scalar(data) -> bool:
+def _is_scalar(data: Any) -> bool:
     return not isinstance(data, (dict, list))
 
 
-def resolve_format(fmt: str | None, out: Path | None, data) -> str:
+def validate_format(fmt: str | None) -> None:
+    """Raise ValueError if an explicit format isn't one we support (lets the CLI fail fast)."""
+    if fmt is not None and fmt.lower() not in _FORMATS:
+        raise ValueError(f"Unknown format '{fmt}' (use one of: {', '.join(_FORMATS)}).")
+
+
+def resolve_format(fmt: str | None, out: Path | None, data: Any) -> Format:
+    validate_format(fmt)
     if fmt:
-        return fmt.lower()
+        return fmt.lower()  # type: ignore[return-value]
     if out is not None:
         suffix = out.suffix.lower()
         if suffix == ".csv":
@@ -35,11 +46,11 @@ def resolve_format(fmt: str | None, out: Path | None, data) -> str:
     return "table"
 
 
-def to_json(data) -> str:
+def to_json(data: Any) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2, default=str)
 
 
-def _as_rows(data) -> list[dict]:
+def _as_rows(data: Any) -> list[dict]:
     if isinstance(data, dict):
         return [data]
     if isinstance(data, list):
@@ -53,7 +64,7 @@ def _as_rows(data) -> list[dict]:
     return [{"value": data}]
 
 
-def _cell(value) -> str:
+def _cell(value: Any) -> str:
     if isinstance(value, (dict, list)):
         return json.dumps(value, ensure_ascii=False, default=str)
     return "" if value is None else str(value)
@@ -68,18 +79,27 @@ def _columns(rows: list[dict]) -> list[str]:
     return cols
 
 
-def to_csv(data) -> str:
+def to_csv(data: Any) -> str:
     rows = _as_rows(data)
     cols = _columns(rows)
     buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+    # lineterminator="\n": avoid csv's default \r\n, which doubles to \r\n\n when
+    # the CSV is printed to stdout. File writes stay newline-clean too.
+    writer = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore", lineterminator="\n")
     writer.writeheader()
     for row in rows:
         writer.writerow({c: _cell(row.get(c)) for c in cols})
     return buf.getvalue()
 
 
-def decode_disclosure_bodies(detail: dict) -> dict:
+def decode_disclosure_bodies(detail: Any) -> Any:
+    """Decode a disclosure detail's base64 ``htmlMessages`` bodies into readable text.
+
+    Adds a ``<lang>_text`` field next to each ``tr``/``en`` body. KAP encodes these
+    as base64 ISO-8859-9 XHTML, so that's the assumed encoding. **Mutates ``detail``
+    in place** (and returns it). On a base64 failure, sets ``<lang>_text`` to ``None``
+    so "couldn't decode" is distinguishable from "field absent".
+    """
     if not isinstance(detail, dict):
         return detail
     messages = detail.get("htmlMessages")
@@ -94,7 +114,7 @@ def decode_disclosure_bodies(detail: dict) -> dict:
                         raw = base64.b64decode(encoded).decode("iso-8859-9", errors="replace")
                         msg[f"{lang}_text"] = _strip_html(raw)
                     except (ValueError, TypeError):
-                        pass
+                        msg[f"{lang}_text"] = None
     return detail
 
 
@@ -128,7 +148,7 @@ def _print_table(rows: list[dict], out: Path | None) -> None:
     _console.print(table)
 
 
-def output(data, fmt: str | None = None, out: Path | None = None) -> None:
+def output(data: Any, fmt: str | None = None, out: Path | None = None) -> None:
     chosen = resolve_format(fmt, out, data)
     if chosen == "json":
         _write_text(to_json(data), out)

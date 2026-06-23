@@ -1,12 +1,29 @@
 from __future__ import annotations
 
+from typing import Any, Literal, TypedDict
+
 import httpx
 
 from kap.auth import TokenProvider
 from kap.config import ResolvedConfig
-from kap.errors import KapApiError, KapConnectivityError
+from kap.errors import KapApiError, KapConnectivityError, KapResponseError
+
+# A parsed JSON object from the KAP API. The upstream payloads are variable and
+# polymorphic, so we intentionally don't model each one — but every consumer
+# treats list rows and detail bodies as JSON objects, so this is the honest type.
+JsonObj = dict[str, Any]
 
 _PDF_MARKER = b"%PDF"
+
+
+class RawResponse(TypedDict):
+    """The fixed-shape envelope returned by ``KapClient.raw`` (authored here, not upstream)."""
+
+    service: str
+    status_code: int
+    is_success: bool
+    content_type: str | None
+    body: str
 
 _CONNECTIVITY_HINT = (
     "Could not connect to KAP. You may not be on an allowlisted IP — MKK silently "
@@ -32,19 +49,22 @@ class KapClient:
 
     # ── public endpoints ──────────────────────────────────────────────────────
     def last_disclosure_index(self) -> int:
-        data = self._get("api/vyk/lastDisclosureIndex").json() or {}
-        for key, value in data.items():
-            if key.lower() == "lastdisclosureindex":
-                return int(value)
-        raise KapApiError(200, None, f"Unexpected lastDisclosureIndex response: {data}")
+        resp = self._get("api/vyk/lastDisclosureIndex")
+        data = self._json(resp) or {}
+        if isinstance(data, dict):
+            for key, value in data.items():
+                if key.lower() == "lastdisclosureindex":
+                    return int(value)
+        raise KapResponseError(resp.status_code, f"unexpected lastDisclosureIndex response: {data}")
 
     def disclosures(
         self,
         index: int,
+        *,
         disclosure_type: str | None = None,
         disclosure_class: str | None = None,
         company_id: int | None = None,
-    ) -> list:
+    ) -> list[JsonObj]:
         params: dict[str, str | int] = {"disclosureIndex": index}
         if disclosure_type:
             params["disclosureType"] = disclosure_type
@@ -55,13 +75,13 @@ class KapClient:
         return self._get_list("api/vyk/disclosures", params)
 
     def disclosure_detail(
-        self, index: int, file_type: str = "data", sub_report: str | None = None
-    ) -> dict | None:
+        self, index: int, file_type: Literal["data", "html"] = "data", sub_report: str | None = None
+    ) -> JsonObj | None:
         params: dict[str, str] = {"fileType": file_type}
         if sub_report:
             params["subReportList"] = sub_report
         try:
-            return self._get(f"api/vyk/disclosureDetail/{index}", params).json()
+            return self._json(self._get(f"api/vyk/disclosureDetail/{index}", params))
         except KapApiError as exc:
             if exc.is_not_found:
                 return None
@@ -71,35 +91,46 @@ class KapClient:
         if not attachment_id or not attachment_id.strip():
             raise ValueError("attachment_id is required.")
         try:
-            raw = self._get(f"api/vyk/downloadAttachment/{attachment_id}").content
+            resp = self._get(f"api/vyk/downloadAttachment/{attachment_id}")
         except KapApiError as exc:
             if exc.is_not_found:
                 return None
             raise
-        return self._extract_pdf(raw)
+        # KAP wraps the file in a Java-serialized byte[] envelope; the real PDF
+        # starts at the %PDF marker. No marker → it isn't the PDF we expect, and
+        # we must NOT silently save non-PDF bytes to a .pdf file.
+        raw = resp.content
+        start = raw.find(_PDF_MARKER)
+        if start < 0:
+            raise KapResponseError(
+                resp.status_code,
+                f"attachment '{attachment_id}' is not a PDF "
+                f"(content-type={resp.headers.get('content-type')}, {len(raw)} bytes, no %PDF marker)",
+            )
+        return raw[start:]
 
-    def members(self) -> list:
+    def members(self) -> list[JsonObj]:
         return self._get_list("api/vyk/members")
 
-    def funds(self) -> list:
+    def funds(self) -> list[JsonObj]:
         return self._get_list("api/vyk/funds")
 
-    def fund_detail(self, fund_id: int) -> list:
+    def fund_detail(self, fund_id: int) -> list[JsonObj]:
         return self._get_list(f"api/vyk/fundDetail/{fund_id}")
 
-    def member_securities(self) -> list:
+    def member_securities(self) -> list[JsonObj]:
         return self._get_list("api/vyk/memberSecurities")
 
-    def blocked_disclosures(self) -> list:
+    def blocked_disclosures(self) -> list[JsonObj]:
         return self._get_list("api/vyk/blockedDisclosures")
 
-    def ca_event_status(self, ref_ids: list[int]) -> list:
+    def ca_event_status(self, ref_ids: list[int]) -> list[JsonObj]:
         if not ref_ids:
             raise ValueError("At least one processRefId is required.")
         joined = ",".join(str(r) for r in ref_ids)
         return self._get_list("api/vyk/caEventStatus", {"processRefId": joined})
 
-    def raw(self, path: str, query: dict[str, str] | None = None) -> dict:
+    def raw(self, path: str, query: dict[str, str] | None = None) -> RawResponse:
         """Diagnostic passthrough: GET any relative path and return the raw response
         metadata + body. Unlike the typed methods, this does NOT retry on token
         errors and does NOT raise on non-2xx — the status code and body are returned
@@ -143,17 +174,20 @@ class KapClient:
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             raise KapConnectivityError(_CONNECTIVITY_HINT) from exc
 
-    def _get_list(self, path: str, params: dict | None = None) -> list:
+    def _get_list(self, path: str, params: dict | None = None) -> list[JsonObj]:
         try:
-            return self._get(path, params).json() or []
+            return self._json(self._get(path, params)) or []
         except KapApiError as exc:
             if exc.is_not_found:
                 return []
             raise
 
     @staticmethod
-    def _extract_pdf(raw: bytes) -> bytes:
-        if not raw:
-            return raw
-        start = raw.find(_PDF_MARKER)
-        return raw[start:] if start > 0 else raw
+    def _json(resp: httpx.Response) -> Any:
+        """Parse a 2xx body as JSON, surfacing a non-JSON body as a KapResponseError."""
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise KapResponseError(
+                resp.status_code, f"expected a JSON body but got: {resp.text[:200]}"
+            ) from exc

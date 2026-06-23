@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Any, Literal, Optional
 
 import typer
 from rich.console import Console
@@ -10,7 +12,7 @@ from rich.console import Console
 from kap.client import KapClient
 from kap.config import load_config
 from kap.errors import KapError
-from kap.render import decode_disclosure_bodies, output
+from kap.render import decode_disclosure_bodies, output, validate_format
 
 # Force UTF-8 so Turkish help text and disclosure data never crash on a
 # cp1252 (default Windows) terminal.
@@ -40,41 +42,57 @@ def _make_client(env: Optional[str]) -> KapClient:
     return KapClient(load_config(env))
 
 
-def _run(env, fmt, out, fn, *, decode: bool = False, verbose: bool = False) -> None:
+@contextmanager
+def _errors(verbose: bool) -> Iterator[None]:
+    """Turn any expected failure into a clean stderr message + exit 1.
+
+    Covers config (`ValueError`), API/connectivity (`KapError`), and output/file
+    writes (`OSError`). The full traceback is shown only with --verbose.
+    """
     try:
-        client = _make_client(env)
-        try:
-            data = fn(client)
-        finally:
-            client.close()
-    except (KapError, ValueError) as exc:
+        yield
+    except (KapError, ValueError, OSError) as exc:
         _err_console.print(f"[red]Error:[/red] {exc}")
         if verbose:
             _err_console.print_exception()
         raise typer.Exit(code=1)
-    if decode and isinstance(data, dict):
-        data = decode_disclosure_bodies(data)
-    output(data, fmt=fmt, out=out)
 
 
-def _save_bytes(env, out, fn, default_name: str, *, verbose: bool = False) -> None:
-    try:
-        client = _make_client(env)
-        try:
+def _run(
+    env: Optional[str],
+    fmt: Optional[str],
+    out: Optional[Path],
+    fn: Callable[[KapClient], Any],
+    *,
+    decode: bool = False,
+    verbose: bool = False,
+) -> None:
+    with _errors(verbose):
+        validate_format(fmt)  # fail fast before any network call
+        with _make_client(env) as client:
             data = fn(client)
-        finally:
-            client.close()
-    except (KapError, ValueError) as exc:
-        _err_console.print(f"[red]Error:[/red] {exc}")
-        if verbose:
-            _err_console.print_exception()
-        raise typer.Exit(code=1)
-    if data is None:
-        _err_console.print("[yellow]Not found.[/yellow]")
-        raise typer.Exit(code=1)
-    target = out or Path(default_name)
-    target.write_bytes(data)
-    print(f"Saved {len(data)} bytes to {target}")
+        if decode and isinstance(data, dict):
+            data = decode_disclosure_bodies(data)
+        output(data, fmt=fmt, out=out)
+
+
+def _save_bytes(
+    env: Optional[str],
+    out: Optional[Path],
+    fn: Callable[[KapClient], Optional[bytes]],
+    default_name: str,
+    *,
+    verbose: bool = False,
+) -> None:
+    with _errors(verbose):
+        with _make_client(env) as client:
+            data = fn(client)
+        if data is None:
+            _err_console.print("[yellow]Not found.[/yellow]")
+            raise typer.Exit(code=1)
+        target = out or Path(default_name)
+        target.write_bytes(data)
+        print(f"Saved {len(data)} bytes to {target}")
 
 
 @app.command("last-index")
@@ -95,13 +113,21 @@ def disclosures(
     verbose: VerboseOpt = False,
 ):
     """First 50 disclosures from --index onward (optionally filtered)."""
-    _run(env, fmt, out, lambda c: c.disclosures(index, type_, class_, company_id), verbose=verbose)
+    _run(
+        env,
+        fmt,
+        out,
+        lambda c: c.disclosures(
+            index, disclosure_type=type_, disclosure_class=class_, company_id=company_id
+        ),
+        verbose=verbose,
+    )
 
 
 @app.command("disclosure-detail")
 def disclosure_detail(
     index: Annotated[int, typer.Argument(help="Disclosure index.")],
-    file_type: Annotated[str, typer.Option("--file-type", help="data | html.")] = "data",
+    file_type: Annotated[Literal["data", "html"], typer.Option("--file-type", help="data | html.")] = "data",
     sub_report: Annotated[Optional[str], typer.Option("--sub-report", help="subReportList id.")] = None,
     env: EnvOpt = None,
     fmt: FormatOpt = None,
@@ -183,7 +209,8 @@ def raw(
     """Raw exploration probe: call any relative path and dump the response."""
     params: dict[str, str] = {}
     for item in query or []:
-        if "=" in item:
-            key, value = item.split("=", 1)
-            params[key] = value
+        if "=" not in item:
+            raise typer.BadParameter(f"--query expects key=value, got '{item}'")
+        key, value = item.split("=", 1)
+        params[key] = value
     _run(env, fmt, out, lambda c: c.raw(path, params or None), verbose=verbose)
