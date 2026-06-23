@@ -79,6 +79,30 @@ kap raw api/vyk/members --query foo=bar
 | `ca-event-status` | `GET /api/vyk/caEventStatus` |
 | `raw` | any relative path |
 
+## Utilities (convenience — not raw API endpoints)
+
+These wrap several endpoint calls into one. Unlike the core commands, they don't map to a single
+KAP endpoint — they resolve a ticker/fund and orchestrate the right calls.
+
+| Utility | What it does | Orchestrates |
+|---|---|---|
+| `resolve-ticker <q>` | ticker or company-name → companyId + title | `GET /members` |
+| `resolve-fund <q>` | fund code or name → fundId + name | `GET /funds` |
+| `ticker-disclosures <q> [--limit N]` | recent disclosures for a ticker, newest first | resolve + paged `GET /disclosures` |
+| `ticker-financials <q> [--limit N]` | recent FR filings for a ticker | resolve + paged `GET /disclosures?disclosureClass=FR` |
+| `fund-info <q>` | fund general-info sections | resolve + `GET /fundDetail/{id}` |
+| `fund-disclosures <q> [--limit N]` | recent disclosures for a fund's management company (covers all its funds) | resolve + paged `GET /disclosures` (by fundCompanyId) |
+
+```bash
+kap resolve-ticker ASELS
+kap ticker-disclosures ASELS --limit 20
+kap resolve-fund BON
+kap fund-info BON
+```
+
+> Disclosure utilities page backward from the latest index to return genuinely recent filings
+> (the raw `disclosures` command only scans a bounded window forward).
+
 ## Develop
 
 ```bash

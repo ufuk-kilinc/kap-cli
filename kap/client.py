@@ -63,7 +63,7 @@ class KapClient:
         *,
         disclosure_type: str | None = None,
         disclosure_class: str | None = None,
-        company_id: int | None = None,
+        company_id: str | int | None = None,
     ) -> list[JsonObj]:
         params: dict[str, str | int] = {"disclosureIndex": index}
         if disclosure_type:
