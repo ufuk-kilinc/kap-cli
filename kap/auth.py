@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import time
 from pathlib import Path
 
@@ -85,12 +86,15 @@ class TokenProvider:
         return None
 
     def _write_cache(self, token: str, expires_at: int) -> None:
+        payload = json.dumps({"token": token, "expires_at": expires_at}).encode("utf-8")
         try:
-            self._cache_dir.mkdir(parents=True, exist_ok=True)
-            self._cache_path.write_text(json.dumps({"token": token, "expires_at": expires_at}))
+            self._cache_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            # Create the token file with restrictive perms atomically — no window
+            # where it is world-readable. The mode arg is ignored on Windows.
+            fd = os.open(self._cache_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             try:
-                self._cache_path.chmod(0o600)
-            except OSError:
-                pass  # best-effort on platforms without POSIX perms
+                os.write(fd, payload)
+            finally:
+                os.close(fd)
         except OSError:
             pass  # cache is an optimization; never fail the call over it
