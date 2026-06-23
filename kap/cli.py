@@ -40,7 +40,7 @@ def _make_client(env: Optional[str]) -> KapClient:
     return KapClient(load_config(env))
 
 
-def _run(env, fmt, out, fn, *, decode: bool = False) -> None:
+def _run(env, fmt, out, fn, *, decode: bool = False, verbose: bool = False) -> None:
     try:
         client = _make_client(env)
         try:
@@ -49,13 +49,15 @@ def _run(env, fmt, out, fn, *, decode: bool = False) -> None:
             client.close()
     except (KapError, ValueError) as exc:
         _err_console.print(f"[red]Error:[/red] {exc}")
+        if verbose:
+            _err_console.print_exception()
         raise typer.Exit(code=1)
     if decode and isinstance(data, dict):
         data = decode_disclosure_bodies(data)
     output(data, fmt=fmt, out=out)
 
 
-def _save_bytes(env, out, fn, default_name: str) -> None:
+def _save_bytes(env, out, fn, default_name: str, *, verbose: bool = False) -> None:
     try:
         client = _make_client(env)
         try:
@@ -64,6 +66,8 @@ def _save_bytes(env, out, fn, default_name: str) -> None:
             client.close()
     except (KapError, ValueError) as exc:
         _err_console.print(f"[red]Error:[/red] {exc}")
+        if verbose:
+            _err_console.print_exception()
         raise typer.Exit(code=1)
     if data is None:
         _err_console.print("[yellow]Not found.[/yellow]")
@@ -76,7 +80,7 @@ def _save_bytes(env, out, fn, default_name: str) -> None:
 @app.command("last-index")
 def last_index(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """Latest published disclosure id (use as a polling cursor)."""
-    _run(env, fmt, out, lambda c: c.last_disclosure_index())
+    _run(env, fmt, out, lambda c: c.last_disclosure_index(), verbose=verbose)
 
 
 @app.command()
@@ -91,7 +95,7 @@ def disclosures(
     verbose: VerboseOpt = False,
 ):
     """First 50 disclosures from --index onward (optionally filtered)."""
-    _run(env, fmt, out, lambda c: c.disclosures(index, type_, class_, company_id))
+    _run(env, fmt, out, lambda c: c.disclosures(index, type_, class_, company_id), verbose=verbose)
 
 
 @app.command("disclosure-detail")
@@ -105,7 +109,7 @@ def disclosure_detail(
     verbose: VerboseOpt = False,
 ):
     """Full detail for one disclosure (base64 bodies decoded to readable text)."""
-    _run(env, fmt, out, lambda c: c.disclosure_detail(index, file_type, sub_report), decode=True)
+    _run(env, fmt, out, lambda c: c.disclosure_detail(index, file_type, sub_report), decode=True, verbose=verbose)
 
 
 @app.command("download-attachment")
@@ -113,21 +117,22 @@ def download_attachment(
     attachment_id: Annotated[str, typer.Argument(help="Attachment id (last path segment of an attachment url).")],
     out: OutOpt = None,
     env: EnvOpt = None,
+    verbose: VerboseOpt = False,
 ):
     """Download a disclosure attachment PDF (Java envelope auto-unwrapped)."""
-    _save_bytes(env, out, lambda c: c.download_attachment(attachment_id), f"{attachment_id}.pdf")
+    _save_bytes(env, out, lambda c: c.download_attachment(attachment_id), f"{attachment_id}.pdf", verbose=verbose)
 
 
 @app.command()
 def members(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """All KAP-member companies."""
-    _run(env, fmt, out, lambda c: c.members())
+    _run(env, fmt, out, lambda c: c.members(), verbose=verbose)
 
 
 @app.command()
 def funds(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """All funds."""
-    _run(env, fmt, out, lambda c: c.funds())
+    _run(env, fmt, out, lambda c: c.funds(), verbose=verbose)
 
 
 @app.command("fund-detail")
@@ -139,19 +144,19 @@ def fund_detail(
     verbose: VerboseOpt = False,
 ):
     """General-info sections for one fund."""
-    _run(env, fmt, out, lambda c: c.fund_detail(fund_id))
+    _run(env, fmt, out, lambda c: c.fund_detail(fund_id), verbose=verbose)
 
 
 @app.command("member-securities")
 def member_securities(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """Listed (IGS) companies with their securities (ISIN-level)."""
-    _run(env, fmt, out, lambda c: c.member_securities())
+    _run(env, fmt, out, lambda c: c.member_securities(), verbose=verbose)
 
 
 @app.command("blocked-disclosures")
 def blocked_disclosures(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """Disclosures blocked from access in KAP."""
-    _run(env, fmt, out, lambda c: c.blocked_disclosures())
+    _run(env, fmt, out, lambda c: c.blocked_disclosures(), verbose=verbose)
 
 
 @app.command("ca-event-status")
@@ -163,7 +168,7 @@ def ca_event_status(
     verbose: VerboseOpt = False,
 ):
     """Corporate-action (rights-usage) process status for the given ref ids."""
-    _run(env, fmt, out, lambda c: c.ca_event_status(ref_ids))
+    _run(env, fmt, out, lambda c: c.ca_event_status(ref_ids), verbose=verbose)
 
 
 @app.command()
@@ -181,4 +186,4 @@ def raw(
         if "=" in item:
             key, value = item.split("=", 1)
             params[key] = value
-    _run(env, fmt, out, lambda c: c.raw(path, params or None))
+    _run(env, fmt, out, lambda c: c.raw(path, params or None), verbose=verbose)

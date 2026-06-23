@@ -46,14 +46,14 @@ kap ca-event-status 111 222
 kap raw api/vyk/members --query foo=bar
 ```
 
-### Global options (before the command)
+### Common options (place after the command name)
 
 | Option | Meaning |
 |---|---|
 | `--env test\|production` | Override the active environment for this call. |
 | `-f, --format table\|json\|csv` | Output format (default: table; nested responses default to json). |
 | `-o, --out PATH` | Write output to a file (format inferred from extension if `--format` omitted). |
-| `-v, --verbose` | Fuller error detail. |
+| `-v, --verbose` | Fuller error detail (prints full traceback on error). |
 
 ## Commands ↔ endpoints
 

@@ -93,5 +93,14 @@ def test_api_error_exits_nonzero_with_message(fake_client, monkeypatch):
     monkeypatch.setattr(fake_client, "funds", boom, raising=False)
     result = runner.invoke(cli.app, ["funds"])
     assert result.exit_code == 1
-    combined = result.output + (getattr(result, "stderr", "") or "")
-    assert "ER001" in combined or "denied" in combined
+    assert "ER001" in result.stderr or "denied" in result.stderr
+    assert "ER001" not in result.stdout and "denied" not in result.stdout
+
+
+def test_config_error_exits_cleanly(monkeypatch):
+    def boom(env):
+        raise ValueError("Missing API key for env 'test'.")
+    monkeypatch.setattr(cli, "_make_client", boom)
+    result = runner.invoke(cli.app, ["members"])
+    assert result.exit_code == 1
+    assert "Missing API key" in (result.stderr or "") or "Missing API key" in result.output
