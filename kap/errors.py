@@ -35,7 +35,8 @@ class KapApiError(KapError):
             parsed = json.loads(body)
             if isinstance(parsed, dict):
                 code = parsed.get("code")
-                message = parsed.get("message") or body
+                msg = parsed.get("message")
+                message = msg if msg is not None else body
         except (ValueError, TypeError):
             pass  # not JSON (HTML error page etc.) — keep the raw body
         return cls(status_code, code, message)

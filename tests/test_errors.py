@@ -32,3 +32,9 @@ def test_str_includes_code_and_status():
     err = KapApiError.from_body(403, '{"code":"ER001","message":"denied"}')
     text = str(err)
     assert "ER001" in text and "403" in text and "denied" in text
+
+
+def test_empty_message_string_is_preserved():
+    err = KapApiError.from_body(404, '{"code":"ER005","message":""}')
+    assert err.code == "ER005"
+    assert err.message == ""
