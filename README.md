@@ -16,15 +16,23 @@ cp .env.example .env      # then fill in your API key(s)
 
 ## Configure
 
-Edit `.env`:
+Put your keys in a `.env` file. Two locations are read (in increasing priority):
+
+1. **`~/.kap/.env`** (your home folder) — **use this for an installed `kap`**, so it works from any directory.
+2. **`.env` in the current directory** — a per-checkout override, handy when developing.
 
 ```bash
-KAP_ACTIVE_ENV=test                 # or: production
-KAP_TEST_API_KEY=your-test-key
+KAP_ACTIVE_ENV=production            # or: test
 KAP_PROD_API_KEY=your-prod-key
+KAP_TEST_API_KEY=your-test-key
 ```
 
-`.env` is gitignored — never commit your keys.
+Both files are gitignored — never commit your keys.
+
+> **Why this matters:** `kap` reads `.env` relative to where you run it. If you only have a
+> `.env` in the repo and run `kap` from elsewhere, it can't find your key and falls back to the
+> `test` default (`Error: Missing API key for env 'test'`). Putting the file at `~/.kap/.env`
+> fixes that for good.
 
 > **IP allowlist:** KAP only answers allowlisted source IPs. If a command hangs then
 > fails with a connectivity error, you're probably on a non-allowlisted IP (VPN/egress) —

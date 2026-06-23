@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["test", "production"]
+
+# Config is read from (in increasing priority): the user's home config
+# (~/.kap/.env, works from any directory — the right place for an installed
+# CLI), then a .env in the current directory (a dev override), then real
+# environment variables. This is why `kap` works globally once ~/.kap/.env exists.
+_HOME_ENV = Path.home() / ".kap" / ".env"
 
 
 @dataclass(frozen=True)
@@ -21,7 +28,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="KAP_",
-        env_file=".env",
+        env_file=(str(_HOME_ENV), ".env"),  # home config first, cwd .env overrides it
         env_file_encoding="utf-8",
         extra="ignore",
     )
