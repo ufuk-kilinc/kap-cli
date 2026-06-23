@@ -14,7 +14,7 @@ from kap.client import KapClient
 from kap.config import load_config
 from kap.errors import KapError
 from kap.render import decode_disclosure_bodies, output, validate_format
-from kap.utils import resolve_company, resolve_fund, resolve_one, scan_disclosures
+from kap.utils import resolve_company, resolve_fund, resolve_one, scan_disclosures, ScanResult
 
 # Force UTF-8 so Turkish help text and disclosure data never crash on a
 # cp1252 (default Windows) terminal.
@@ -85,7 +85,7 @@ def _describe_fund(f: dict) -> str:
     return f"{f.get('fundCode')} — {f.get('fundName')}"
 
 
-def _render_scan(fmt, out, result) -> None:
+def _render_scan(fmt: Optional[str], out: Optional[Path], result: ScanResult) -> None:
     if result.truncated:
         _err_console.print(
             "[yellow]Note:[/yellow] some windows hit the 50-result cap; very active filers may be "

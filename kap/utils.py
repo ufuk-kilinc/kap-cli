@@ -6,32 +6,48 @@ from dataclasses import dataclass
 from kap.client import JsonObj, KapClient
 
 
+def _dedupe(rows: list[JsonObj], key: str) -> list[JsonObj]:
+    """Drop rows with a duplicate value for `key` (KAP returns exact-duplicate rows), keeping order."""
+    seen: set = set()
+    out: list[JsonObj] = []
+    for row in rows:
+        k = row.get(key)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(row)
+    return out
+
+
+def _codes(value) -> set[str]:
+    """A code cell may be comma-joined (e.g. 'AKM, AKMEN'); return the uppercase token set."""
+    return {c.strip().upper() for c in str(value or "").split(",") if c.strip()}
+
+
 def resolve_company(client: KapClient, query: str) -> list[JsonObj]:
     """Resolve a stock ticker or company-name fragment to member rows.
 
-    Exact stockCode match (case-insensitive) wins; otherwise a case-insensitive
-    substring match on the company title. Returns all matches.
+    Exact stockCode token match (case-insensitive; the field may be comma-joined) wins; otherwise
+    a case-insensitive substring match on the company title. Deduped by company id.
     """
     q = query.strip().upper()
     members = client.members()
-    exact = [m for m in members if str(m.get("stockCode") or "").upper() == q]
-    if exact:
-        return exact
-    return [m for m in members if q in str(m.get("title") or "").upper()]
+    exact = [m for m in members if q in _codes(m.get("stockCode"))]
+    matches = exact if exact else [m for m in members if q in str(m.get("title") or "").upper()]
+    return _dedupe(matches, "id")
 
 
 def resolve_fund(client: KapClient, query: str) -> list[JsonObj]:
     """Resolve a fund code or fund-name fragment to fund rows.
 
-    Exact fundCode match (case-insensitive) wins; otherwise a case-insensitive
-    substring match on the fund name. Returns all matches.
+    Exact fundCode token match (case-insensitive; the field may be comma-joined) wins; otherwise a
+    case-insensitive substring match on the fund name. Deduped by fundId.
     """
     q = query.strip().upper()
     funds = client.funds()
-    exact = [f for f in funds if str(f.get("fundCode") or "").upper() == q]
-    if exact:
-        return exact
-    return [f for f in funds if q in str(f.get("fundName") or "").upper()]
+    exact = [f for f in funds if q in _codes(f.get("fundCode"))]
+    matches = exact if exact else [f for f in funds if q in str(f.get("fundName") or "").upper()]
+    return _dedupe(matches, "fundId")
 
 
 def resolve_one(matches: list[JsonObj], query: str, what: str, describe: Callable[[JsonObj], str]) -> JsonObj:

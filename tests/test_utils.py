@@ -119,3 +119,33 @@ def test_scan_sets_truncated_when_window_returns_50():
     client = FakeClient(pages={0: [_d(i) for i in range(50)]}, last=10)
     result = scan_disclosures(client, "C", limit=5, window=50)
     assert result.truncated is True
+
+
+def test_resolve_company_handles_comma_joined_stockcode():
+    members = [{"id": "9", "stockCode": "AKM, AKMEN", "title": "AKMERKEZ GMYO"}]
+    out = resolve_company(FakeClient(members=members), "AKMEN")
+    assert len(out) == 1 and out[0]["id"] == "9"
+
+
+def test_resolve_company_dedupes_duplicate_id():
+    row = {"id": "2413", "stockCode": "AKBNK", "title": "AKBANK T.A.S."}
+    out = resolve_company(FakeClient(members=[dict(row), dict(row)]), "AKBNK")
+    assert len(out) == 1 and out[0]["id"] == "2413"
+
+
+def test_resolve_fund_dedupes_duplicate_fundid():
+    row = {"fundId": 5758, "fundCode": "BON", "fundName": "TEST FON", "fundCompanyId": 700}
+    out = resolve_fund(FakeClient(funds=[dict(row), dict(row)]), "BON")
+    assert len(out) == 1
+
+
+def test_scan_last_less_than_window():
+    client = FakeClient(pages={0: [_d(5)]}, last=10)
+    result = scan_disclosures(client, "C", limit=5, window=50)
+    assert [d["disclosureIndex"] for d in result.items] == ["5"]
+
+
+def test_scan_all_empty_pages_returns_empty():
+    client = FakeClient(pages={}, last=200)
+    result = scan_disclosures(client, "C", limit=5, window=50, max_windows=3)
+    assert result.items == [] and result.windows == 3
