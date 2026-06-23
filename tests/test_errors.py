@@ -38,3 +38,12 @@ def test_empty_message_string_is_preserved():
     err = KapApiError.from_body(404, '{"code":"ER005","message":""}')
     assert err.code == "ER005"
     assert err.message == ""
+
+
+def test_response_error_is_a_kap_error():
+    from kap.errors import KapError, KapResponseError
+
+    err = KapResponseError(200, "bad shape")
+    assert isinstance(err, KapError)
+    assert err.status_code == 200
+    assert "200" in str(err) and "bad shape" in str(err)

@@ -4,7 +4,7 @@ import respx
 
 from kap.client import KapClient
 from kap.config import ResolvedConfig
-from kap.errors import KapApiError, KapConnectivityError
+from kap.errors import KapApiError, KapConnectivityError, KapResponseError
 
 
 class _StubAuth:
@@ -128,6 +128,71 @@ def test_download_attachment_er005_returns_none():
         return_value=httpx.Response(404, json={"code": "ER005", "message": "nf"})
     )
     assert _client().download_attachment("abc") is None
+
+
+@respx.mock
+def test_download_attachment_without_pdf_marker_raises():
+    # A non-PDF body (e.g. an HTML/JSON error served with 200) must NOT be saved as a PDF.
+    respx.get("https://h/api/vyk/downloadAttachment/x").mock(
+        return_value=httpx.Response(200, content=b"\x89PNG not a pdf", headers={"content-type": "image/png"})
+    )
+    with pytest.raises(KapResponseError, match="not a PDF"):
+        _client().download_attachment("x")
+
+
+@respx.mock
+def test_download_attachment_bare_pdf_passes_through():
+    respx.get("https://h/api/vyk/downloadAttachment/y").mock(
+        return_value=httpx.Response(200, content=b"%PDF-1.7 already clean")
+    )
+    assert _client().download_attachment("y") == b"%PDF-1.7 already clean"
+
+
+@respx.mock
+def test_non_json_2xx_raises_response_error():
+    respx.get("https://h/api/vyk/members").mock(
+        return_value=httpx.Response(200, text="<html>oops</html>")
+    )
+    with pytest.raises(KapResponseError, match="JSON"):
+        _client().members()
+
+
+@respx.mock
+def test_last_disclosure_index_bad_shape_raises():
+    respx.get("https://h/api/vyk/lastDisclosureIndex").mock(
+        return_value=httpx.Response(200, json={"somethingElse": 1})
+    )
+    with pytest.raises(KapResponseError):
+        _client().last_disclosure_index()
+
+
+@respx.mock
+def test_fund_detail_constructs_correct_path():
+    respx.get("https://h/api/vyk/fundDetail/42").mock(
+        return_value=httpx.Response(200, json=[{"section": "general"}])
+    )
+    assert _client().fund_detail(42) == [{"section": "general"}]
+
+
+@respx.mock
+def test_member_securities_and_blocked_disclosures_paths():
+    respx.get("https://h/api/vyk/memberSecurities").mock(
+        return_value=httpx.Response(200, json=[{"isin": "TR0001"}])
+    )
+    respx.get("https://h/api/vyk/blockedDisclosures").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    assert _client().member_securities() == [{"isin": "TR0001"}]
+    assert _client().blocked_disclosures() == []
+
+
+@respx.mock
+def test_disclosure_detail_sends_file_type_param():
+    route = respx.get("https://h/api/vyk/disclosureDetail/5").mock(
+        return_value=httpx.Response(200, json={"disclosureIndex": 5})
+    )
+    _client().disclosure_detail(5, file_type="html")
+    assert route.calls.last.request.url.params["fileType"] == "html"
 
 
 @respx.mock

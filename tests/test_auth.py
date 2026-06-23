@@ -7,6 +7,7 @@ import pytest
 import respx
 
 from kap.auth import TokenProvider, parse_jwt_expiry
+from kap.errors import KapApiError, KapResponseError
 
 
 def _make_jwt(exp: int) -> str:
@@ -79,3 +80,34 @@ def test_invalidate_forces_remint(tmp_path):
     assert tp.get_token() == t1
     tp.invalidate()
     assert tp.get_token() == t2
+
+
+@respx.mock
+def test_mint_failure_raises_kap_api_error(tmp_path):
+    respx.get("https://h/auth/generateToken").mock(
+        return_value=httpx.Response(403, json={"code": "ER001", "message": "denied"})
+    )
+    tp = TokenProvider("https://h", "secret", "test", cache_dir=tmp_path)
+    with pytest.raises(KapApiError) as ei:
+        tp.get_token()
+    assert ei.value.code == "ER001"
+
+
+@respx.mock
+def test_mint_non_json_body_raises_response_error(tmp_path):
+    respx.get("https://h/auth/generateToken").mock(
+        return_value=httpx.Response(200, text="<html>gateway</html>")
+    )
+    tp = TokenProvider("https://h", "secret", "test", cache_dir=tmp_path)
+    with pytest.raises(KapResponseError):
+        tp.get_token()
+
+
+@respx.mock
+def test_mint_missing_token_raises_response_error(tmp_path):
+    respx.get("https://h/auth/generateToken").mock(
+        return_value=httpx.Response(200, json={"notToken": "x"})
+    )
+    tp = TokenProvider("https://h", "secret", "test", cache_dir=tmp_path)
+    with pytest.raises(KapResponseError):
+        tp.get_token()

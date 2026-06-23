@@ -28,7 +28,7 @@ class KapApiError(KapError):
         return self.code == _NOT_FOUND_CODE
 
     @classmethod
-    def from_body(cls, status_code: int, body: str) -> "KapApiError":
+    def from_body(cls, status_code: int, body: str) -> KapApiError:
         code: str | None = None
         message = body
         try:
@@ -40,6 +40,19 @@ class KapApiError(KapError):
         except (ValueError, TypeError):
             pass  # not JSON (HTML error page etc.) — keep the raw body
         return cls(status_code, code, message)
+
+
+class KapResponseError(KapError):
+    """A 2xx response whose body wasn't valid JSON or the expected shape.
+
+    Distinct from ``KapApiError`` (which models a non-2xx error envelope): the
+    request succeeded at the HTTP level but the payload couldn't be used.
+    """
+
+    def __init__(self, status_code: int, message: str):
+        self.status_code = status_code
+        self.message = message
+        super().__init__(f"KAP unexpected response (HTTP {status_code}): {message}")
 
 
 class KapConnectivityError(KapError):

@@ -5,10 +5,16 @@ import json
 import os
 import time
 from pathlib import Path
+from typing import TypedDict
 
 import httpx
 
-from kap.errors import KapApiError
+from kap.errors import KapApiError, KapResponseError
+
+
+class TokenCache(TypedDict):
+    token: str
+    expires_at: int
 
 
 def parse_jwt_expiry(jwt: str) -> int | None:
@@ -68,20 +74,28 @@ class TokenProvider:
         )
         if not resp.is_success:
             raise KapApiError.from_body(resp.status_code, resp.text)
-        token = (resp.json() or {}).get("token")
+        try:
+            body = resp.json()
+        except ValueError as exc:
+            raise KapResponseError(
+                resp.status_code, f"generateToken returned non-JSON body: {resp.text[:200]}"
+            ) from exc
+        token = (body or {}).get("token") if isinstance(body, dict) else None
         if not token:
-            raise KapApiError(resp.status_code, None, f"generateToken returned no token: {resp.text}")
+            raise KapResponseError(resp.status_code, f"generateToken returned no token: {resp.text[:200]}")
         # Fail safe on an unparseable exp: assume 1h so we re-mint soon.
-        exp = parse_jwt_expiry(token) or int(time.time()) + 3600
+        exp = parse_jwt_expiry(token)
+        if exp is None:
+            exp = int(time.time()) + 3600
         self._write_cache(token, exp)
         return token
 
-    def _read_cache(self) -> dict | None:
+    def _read_cache(self) -> TokenCache | None:
         try:
             data = json.loads(self._cache_path.read_text())
             if isinstance(data, dict) and "token" in data and "expires_at" in data:
-                return data
-        except (OSError, ValueError):
+                return TokenCache(token=data["token"], expires_at=int(data["expires_at"]))
+        except (OSError, ValueError, TypeError):
             pass
         return None
 
