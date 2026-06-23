@@ -14,6 +14,7 @@ from kap.client import KapClient
 from kap.config import load_config
 from kap.errors import KapError
 from kap.render import decode_disclosure_bodies, output, validate_format
+from kap.utils import resolve_company, resolve_fund, resolve_one, scan_disclosures
 
 # Force UTF-8 so Turkish help text and disclosure data never crash on a
 # cp1252 (default Windows) terminal.
@@ -59,7 +60,9 @@ _EPILOG = (
     "Run [cyan]kap COMMAND --help[/cyan] for a command's own arguments.\n\n"
     "[bold]Common options[/bold] (on every command, placed AFTER it — e.g. "
     "[cyan]kap members --format json[/cyan]):  [cyan]-f/--format[/cyan] \\[table|json|csv], "
-    "[cyan]-o/--out[/cyan] PATH, [cyan]--env[/cyan] \\[test|production], [cyan]-v/--verbose[/cyan]."
+    "[cyan]-o/--out[/cyan] PATH, [cyan]--env[/cyan] \\[test|production], [cyan]-v/--verbose[/cyan].\n\n"
+    "Core [bold]Commands[/bold] call one KAP endpoint each; [magenta]Utilities[/magenta] are "
+    "multi-call convenience built on them."
 )
 
 app = typer.Typer(
@@ -70,6 +73,26 @@ app = typer.Typer(
     epilog=_EPILOG,
 )
 _err_console = Console(stderr=True)
+
+_UTIL_PANEL = "Utilities (convenience — not raw API endpoints)"
+
+
+def _describe_company(m: dict) -> str:
+    return f"{m.get('stockCode')} — {m.get('title')}"
+
+
+def _describe_fund(f: dict) -> str:
+    return f"{f.get('fundCode')} — {f.get('fundName')}"
+
+
+def _render_scan(fmt, out, result) -> None:
+    if result.truncated:
+        _err_console.print(
+            "[yellow]Note:[/yellow] some windows hit the 50-result cap; very active filers may be "
+            "incomplete — raise --limit."
+        )
+    output(result.items, fmt=fmt, out=out)
+
 
 # Shared output options — available AFTER each command, e.g. kap members --format json.
 EnvOpt = Annotated[Optional[str], typer.Option("--env", help="test | production (overrides .env).")]
@@ -323,3 +346,159 @@ def raw(
         key, value = item.split("=", 1)
         params[key] = value
     _run(env, fmt, out, lambda c: c.raw(path, params or None), verbose=verbose)
+
+
+_TICKER_ARG = Annotated[str, typer.Argument(help="Stock ticker (e.g. ASELS) or a company-name fragment.")]
+_FUND_ARG = Annotated[str, typer.Argument(help="Fund code (e.g. BON) or a fund-name fragment.")]
+_LIMIT_OPT = Annotated[int, typer.Option("--limit", min=1, help="Max disclosures, newest first.")]
+
+
+@app.command(
+    "resolve-ticker",
+    rich_help_panel=_UTIL_PANEL,
+    short_help="[magenta]composite[/magenta]  ticker/name → companyId",
+)
+def resolve_ticker_cmd(
+    query: _TICKER_ARG, env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False
+):
+    """Composite utility (not a single endpoint). Resolve a stock ticker or company-name
+    fragment to its companyId + title.
+
+    Calls GET /api/vyk/members and matches stockCode (exact) or title (substring).
+
+    Example: kap resolve-ticker ASELS
+    """
+    with _errors(verbose):
+        validate_format(fmt)
+        with _make_client(env) as client:
+            matches = resolve_company(client, query)
+        output(matches, fmt=fmt, out=out)
+
+
+@app.command(
+    "resolve-fund",
+    rich_help_panel=_UTIL_PANEL,
+    short_help="[magenta]composite[/magenta]  fund code/name → fundId",
+)
+def resolve_fund_cmd(
+    query: _FUND_ARG, env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False
+):
+    """Composite utility (not a single endpoint). Resolve a fund code or fund-name fragment to
+    its fundId + name.
+
+    Calls GET /api/vyk/funds and matches fundCode (exact) or fundName (substring).
+
+    Example: kap resolve-fund BON
+    """
+    with _errors(verbose):
+        validate_format(fmt)
+        with _make_client(env) as client:
+            matches = resolve_fund(client, query)
+        output(matches, fmt=fmt, out=out)
+
+
+@app.command(
+    "ticker-disclosures",
+    rich_help_panel=_UTIL_PANEL,
+    short_help="[magenta]composite[/magenta]  ticker → recent disclosures (newest first)",
+)
+def ticker_disclosures_cmd(
+    query: _TICKER_ARG,
+    limit: _LIMIT_OPT = 20,
+    env: EnvOpt = None,
+    fmt: FormatOpt = None,
+    out: OutOpt = None,
+    verbose: VerboseOpt = False,
+):
+    """Composite utility (not a single endpoint). Recent disclosures for a ticker, newest first.
+
+    Resolves the ticker via GET /api/vyk/members, then pages GET /api/vyk/disclosures backward
+    from the latest index until --limit are collected.
+
+    Example: kap ticker-disclosures ASELS --limit 20
+    """
+    with _errors(verbose):
+        validate_format(fmt)
+        with _make_client(env) as client:
+            company = resolve_one(resolve_company(client, query), query, "ticker", _describe_company)
+            result = scan_disclosures(client, company["id"], limit)
+        _render_scan(fmt, out, result)
+
+
+@app.command(
+    "ticker-financials",
+    rich_help_panel=_UTIL_PANEL,
+    short_help="[magenta]composite[/magenta]  ticker → recent FR filings (newest first)",
+)
+def ticker_financials_cmd(
+    query: _TICKER_ARG,
+    limit: _LIMIT_OPT = 20,
+    env: EnvOpt = None,
+    fmt: FormatOpt = None,
+    out: OutOpt = None,
+    verbose: VerboseOpt = False,
+):
+    """Composite utility (not a single endpoint). Recent financial-report (FR-class) filings for
+    a ticker, newest first.
+
+    Resolves the ticker via GET /api/vyk/members, then pages GET /api/vyk/disclosures?disclosureClass=FR
+    backward from the latest index until --limit are collected.
+
+    Example: kap ticker-financials ASELS
+    """
+    with _errors(verbose):
+        validate_format(fmt)
+        with _make_client(env) as client:
+            company = resolve_one(resolve_company(client, query), query, "ticker", _describe_company)
+            result = scan_disclosures(client, company["id"], limit, disclosure_class="FR")
+        _render_scan(fmt, out, result)
+
+
+@app.command(
+    "fund-info",
+    rich_help_panel=_UTIL_PANEL,
+    short_help="[magenta]composite[/magenta]  fund code/name → fund detail",
+)
+def fund_info_cmd(
+    query: _FUND_ARG, env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False
+):
+    """Composite utility (not a single endpoint). General-info sections for a fund, by code or name.
+
+    Resolves the fund via GET /api/vyk/funds, then calls GET /api/vyk/fundDetail/{id}.
+
+    Example: kap fund-info BON
+    """
+    with _errors(verbose):
+        validate_format(fmt)
+        with _make_client(env) as client:
+            fund = resolve_one(resolve_fund(client, query), query, "fund", _describe_fund)
+            data = client.fund_detail(fund["fundId"])
+        output(data, fmt=fmt, out=out)
+
+
+@app.command(
+    "fund-disclosures",
+    rich_help_panel=_UTIL_PANEL,
+    short_help="[magenta]composite[/magenta]  fund → recent disclosures (newest first)",
+)
+def fund_disclosures_cmd(
+    query: _FUND_ARG,
+    limit: _LIMIT_OPT = 20,
+    env: EnvOpt = None,
+    fmt: FormatOpt = None,
+    out: OutOpt = None,
+    verbose: VerboseOpt = False,
+):
+    """Composite utility (not a single endpoint). Recent disclosures for a fund, newest first.
+
+    Resolves the fund via GET /api/vyk/funds, then pages GET /api/vyk/disclosures backward by the
+    fund's company id (fundCompanyId).
+
+    Example: kap fund-disclosures BON --limit 20
+    """
+    with _errors(verbose):
+        validate_format(fmt)
+        with _make_client(env) as client:
+            fund = resolve_one(resolve_fund(client, query), query, "fund", _describe_fund)
+            result = scan_disclosures(client, fund["fundCompanyId"], limit)
+        _render_scan(fmt, out, result)
