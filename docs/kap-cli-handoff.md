@@ -1,6 +1,6 @@
 # KAP CLI — Project Handoff & Status
 
-> **Read this first.** Canonical status + handoff for the `kap-cli` project. Last updated **2026-06-23**.
+> **Read this first.** Canonical status + handoff for the `kap-cli` project. Last updated **2026-06-24**.
 > Companion docs: design spec `docs/superpowers/specs/2026-06-23-kap-cli-design.md`, implementation plan
 > `docs/superpowers/plans/2026-06-23-kap-cli.md`. Upstream API contract (the source of truth this wraps):
 > `../tuneup-api/docs/kap-integration.md`.
@@ -20,9 +20,10 @@
   `OSError`), honest types (`JsonObj`/`RawResponse`/`TokenCache`/`Literal`s), Unix CSV, fail-fast
   `--format`/`--file-type`, strict `raw --query` — independent Opus verification verdict: **A+**.
 - **Remote:** private `https://github.com/ufuk-kilinc/kap-cli` (`main` == origin).
-- **NOT yet run against the live KAP API.** All logic is unit-tested against the documented contract via
-  mocked HTTP (`respx`). A first **live smoke** from an allowlisted IP with a real key is the #1 open task
-  (see §8).
+- **LIVE-VERIFIED against PROD** (2026-06-24, allowlisted IP, real key in `~/.kap/.env`): all 11 core
+  commands + the 6 utilities exercised against the real feed (e.g. `last-index` → 1619964, members 1124,
+  funds 4452; `ticker-disclosures ASELS`, `fund-disclosures BON` return real data). The earlier "live
+  smoke pending" item is DONE.
 
 **Utilities layer (2026-06-24):** `kap/utils.py` adds composite commands (resolve-ticker/fund,
 ticker-disclosures, ticker-financials, fund-info, fund-disclosures) shown in a separate
@@ -43,28 +44,35 @@ packaged as an easy command.
 
 **In scope (v1, all built):** one command per the 11 KAP service methods + correctness handling.
 
-**Explicitly OUT of scope (non-goals):** the "smart" business logic that lives in the C# Tuni layer —
-no financial-figures XBRL parsing, no FR-cluster discovery, no ticker→companyId resolution, no recency
-backward-scan, no PDF *text* extraction (we download the raw PDF; we don't OCR/extract), no DB/persistence/
-polling. If a researcher needs those, they're the C# `TuneUp.Domain` assistant tools' job. Keep this thin.
+**Utilities layer (added 2026-06-24, opt-in extension):** ticker→companyId / fund resolution and the
+recency backward-scan ARE now provided — but as a deliberately *separate*, clearly-labeled composite
+layer (`kap/utils.py` + a "Utilities" help panel), distinct from the thin 1:1 commands. See §0 + §6.
+
+**Still OUT of scope (non-goals):** the heavier "smart" logic in the C# Tuni layer — financial-figures
+XBRL parsing, FR-cluster discovery, PDF *text* extraction (we download the raw PDF; we don't OCR/extract),
+DB/persistence/polling. If a researcher needs those, they're the C# `TuneUp.Domain` assistant tools' job.
 
 ---
 
 ## 2. How to install & run (researcher-facing — also in README.md)
 
 ```bash
-git clone <repo-url> kap-cli          # no remote yet; for now it's the local folder
+git clone https://github.com/ufuk-kilinc/kap-cli.git
 cd kap-cli
 pip install -e .                       # editable: edit the code, changes apply with no reinstall
-cp .env.example .env                   # then fill in the API key(s)
+mkdir %USERPROFILE%\.kap & copy .env.example %USERPROFILE%\.kap\.env   # then fill in the key
 ```
 Requires **Python 3.11+**. `pip install -e ".[dev]"` also installs test deps (pytest, respx).
+To run `kap` from any directory, add the user Scripts dir to PATH
+(`%USERPROFILE%\AppData\Roaming\Python\Python3xx\Scripts` on Windows).
 
-Configure `.env`:
+Configure **`~/.kap/.env`** (Windows: `%USERPROFILE%\.kap\.env`) — read from ANY directory; a cwd
+`.env` is deliberately NOT read (security: an untrusted dir mustn't redirect the API host). Real env
+vars override.
 ```bash
-KAP_ACTIVE_ENV=test                    # or: production
-KAP_TEST_API_KEY=<test-key>
+KAP_ACTIVE_ENV=production               # or: test
 KAP_PROD_API_KEY=<prod-key>
+KAP_TEST_API_KEY=<test-key>
 ```
 
 Run:
@@ -170,7 +178,9 @@ Mirrors the C# client. The MKK docs are incomplete/misleading; trust this:
 
 ## 7. Verification done
 
-- **76 unit tests passing**, pristine output (no warnings). Coverage: config resolution, error-envelope
+- **103 unit tests passing** (incl. the utilities layer: resolution exact/partial/comma-joined-code/
+  dedupe/ambiguous + backward-scan ordering/dedupe/truncation/edge), pristine output. Coverage: config
+  resolution, error-envelope
   parsing (+ empty-message edge), token mint/exp/skew/disk-reuse-across-instances/invalidate + mint
   failure/non-JSON/no-token, all client endpoints incl. raw-auth-header assertion + retry-once over
   ER004/006/012 + ER005→empty/None + attachment envelope strip + **non-PDF reject** + **non-JSON-2xx
@@ -187,12 +197,16 @@ Mirrors the C# client. The MKK docs are incomplete/misleading; trust this:
 
 ## 8. OPEN / next steps (in priority order)
 
-1. **Live smoke against real KAP (BLOCKER for "it actually works").** Needs (a) a real test or prod API
-   key in `.env`, and (b) an **allowlisted egress IP** (dev IP `46.197.97.199` was allowlisted for the C#
-   work — confirm this machine's egress matches, else open an MKK ticket). Run: `kap last-index`,
-   `kap members --format json | head`, a `kap disclosure-detail <id>`, and a `kap download-attachment <id>
-   --out test.pdf` (verify the PDF opens). Watch for: real error-envelope shapes, `lastDisclosureIndex`
-   JSON key casing, `disclosureDetail` body field actually being `htmlMessages[].tr/en` (the decode target).
+1. **Live smoke — DONE (2026-06-24, prod, allowlisted IP).** All commands verified against the real feed.
+   **Key data-shape findings from the live run (important):**
+   - `disclosure-detail` default `--file-type data` returns `subject`/`summary`/`flatData`/`link`/
+     `attachmentUrls` (subject/summary are `{tr,en}` dicts) — there is **NO `htmlMessages`**. The readable
+     base64 body the decode targets only appears under **`--file-type html`**. So for readable text use
+     `kap disclosure-detail <id> --file-type html`. (Possible follow-up: default detail to `html`, or
+     auto-fall-back when the body is absent.)
+   - members `id` (companyId) is a **string**; `stockCode` is often **comma-joined** ("AKM, AKMEN") and
+     rows can be **exact-duplicated** — the utilities handle both (split + dedupe).
+   - `fund-disclosures` works via `fundCompanyId` (management-company scope — all that company's funds).
 2. **Distribute to the team** — share the clone+`pip install -e .`+`.env` steps; confirm each researcher
    is on an allowlisted network.
 3. **Possible future (only if asked):** a `--raw`/no-decode flag on `disclosure-detail`; pagination helper
@@ -205,9 +219,10 @@ Mirrors the C# client. The MKK docs are incomplete/misleading; trust this:
 
 ---
 
-## 9. Pushing to a remote (when ready)
+## 9. Remote
 
-No remote configured. To put it on GitHub:
+Already on GitHub (private): `https://github.com/ufuk-kilinc/kap-cli`, `main` == origin. For reference,
+the repo was created with:
 ```bash
 cd C:\dev\source\tuneup\kap-cli
 gh repo create <org>/kap-cli --private --source . --remote origin --push   # or set-url to an existing repo
