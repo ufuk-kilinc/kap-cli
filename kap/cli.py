@@ -479,7 +479,7 @@ def fund_info_cmd(
 @app.command(
     "fund-disclosures",
     rich_help_panel=_UTIL_PANEL,
-    short_help="[magenta]composite[/magenta]  fund → recent disclosures (newest first)",
+    short_help="[magenta]composite[/magenta]  fund's mgmt company → recent disclosures",
 )
 def fund_disclosures_cmd(
     query: _FUND_ARG,
@@ -493,6 +493,9 @@ def fund_disclosures_cmd(
 
     Resolves the fund via GET /api/vyk/funds, then pages GET /api/vyk/disclosures backward by the
     fund's company id (fundCompanyId).
+
+    Note: KAP files disclosures under the management company, not per fund — results cover ALL
+    funds managed by the same company as the queried fund, not just that one fund.
 
     Example: kap fund-disclosures BON --limit 20
     """

@@ -192,9 +192,9 @@ def test_output_write_error_exits_cleanly(fake_client, monkeypatch):
 
 
 def test_resolve_ticker_lists_matches(fake_client):
-    result = runner.invoke(cli.app, ["resolve-ticker", "ACM"])
+    result = runner.invoke(cli.app, ["resolve-ticker", "ACM", "--format", "json"])
     assert result.exit_code == 0
-    assert "ACM" in result.stdout
+    assert '"stockCode": "ACM"' in result.stdout
 
 
 def test_resolve_fund_lists_matches(fake_client):
