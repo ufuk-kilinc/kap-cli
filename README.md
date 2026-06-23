@@ -9,17 +9,16 @@ Command-line access to every endpoint of the **KAP Veri Yayın Servisi** REST AP
 git clone <repo-url> kap-cli
 cd kap-cli
 pip install -e .          # editable: edit the code, changes apply immediately
-cp .env.example .env      # then fill in your API key(s)
+mkdir %USERPROFILE%\.kap  && copy .env.example %USERPROFILE%\.kap\.env   # Windows
+# macOS/Linux:  mkdir -p ~/.kap && cp .env.example ~/.kap/.env
 ```
 
 > Requires Python 3.11+. (`pip install -e ".[dev]"` also installs the test deps.)
 
 ## Configure
 
-Put your keys in a `.env` file. Two locations are read (in increasing priority):
-
-1. **`~/.kap/.env`** (your home folder) — **use this for an installed `kap`**, so it works from any directory.
-2. **`.env` in the current directory** — a per-checkout override, handy when developing.
+Put your keys in **`~/.kap/.env`** (Windows: `%USERPROFILE%\.kap\.env`). This one file is read
+no matter which directory you run `kap` from.
 
 ```bash
 KAP_ACTIVE_ENV=production            # or: test
@@ -27,12 +26,13 @@ KAP_PROD_API_KEY=your-prod-key
 KAP_TEST_API_KEY=your-test-key
 ```
 
-Both files are gitignored — never commit your keys.
+`~/.kap/.env` is outside the repo and never committed.
 
-> **Why this matters:** `kap` reads `.env` relative to where you run it. If you only have a
-> `.env` in the repo and run `kap` from elsewhere, it can't find your key and falls back to the
-> `test` default (`Error: Missing API key for env 'test'`). Putting the file at `~/.kap/.env`
-> fixes that for good.
+> **Security:** `kap` reads config only from `~/.kap/.env` and real environment variables — it does
+> **not** read a `.env` from the current directory. That's deliberate: a globally-installed CLI run
+> inside an untrusted folder must not pick up a stray `.env` that could redirect `KAP_*_BASE_URL` and
+> leak your key. For a temporary override, set an environment variable (e.g. `set KAP_ACTIVE_ENV=test`),
+> which always takes priority.
 
 > **IP allowlist:** KAP only answers allowlisted source IPs. If a command hangs then
 > fails with a connectivity error, you're probably on a non-allowlisted IP (VPN/egress) —

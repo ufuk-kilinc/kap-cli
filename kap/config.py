@@ -8,10 +8,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["test", "production"]
 
-# Config is read from (in increasing priority): the user's home config
-# (~/.kap/.env, works from any directory — the right place for an installed
-# CLI), then a .env in the current directory (a dev override), then real
-# environment variables. This is why `kap` works globally once ~/.kap/.env exists.
+# Config is read from the user's home config (~/.kap/.env) plus real environment
+# variables (which take priority). We deliberately do NOT read a .env from the
+# current working directory: an installed `kap` is run from anywhere, and loading
+# a cwd .env would let any untrusted directory (a cloned repo, a downloads folder)
+# redirect KAP_*_BASE_URL and exfiltrate the API key. Dev overrides use real env
+# vars (e.g. `set KAP_ACTIVE_ENV=test`), which are not attacker-controlled by cwd.
 _HOME_ENV = Path.home() / ".kap" / ".env"
 
 
@@ -28,7 +30,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="KAP_",
-        env_file=(str(_HOME_ENV), ".env"),  # home config first, cwd .env overrides it
+        env_file=str(_HOME_ENV),  # home only — never an untrusted cwd .env (see note above)
         env_file_encoding="utf-8",
         extra="ignore",
     )

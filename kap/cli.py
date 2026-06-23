@@ -27,7 +27,18 @@ for _stream in (sys.stdout, sys.stderr):
 app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
+    rich_markup_mode="markdown",
     help="CLI for the KAP (Borsa Istanbul) disclosure data API.",
+    epilog=(
+        "Set your API key in `~/.kap/.env` (KAP_PROD_API_KEY / KAP_TEST_API_KEY). "
+        "Run `kap COMMAND --help` for a command's own arguments.\n\n"
+        "**Common options** — on every command, placed *after* it "
+        "(e.g. `kap members --format json`):\n\n"
+        "* `-f, --format [table|json|csv]` — output format (default: table)\n\n"
+        "* `-o, --out PATH` — write output to a file (format inferred from its extension)\n\n"
+        "* `--env [test|production]` — override the active environment\n\n"
+        "* `-v, --verbose` — show full error detail on failure"
+    ),
 )
 _err_console = Console(stderr=True)
 
