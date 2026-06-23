@@ -24,6 +24,13 @@
   mocked HTTP (`respx`). A first **live smoke** from an allowlisted IP with a real key is the #1 open task
   (see §8).
 
+**Utilities layer (2026-06-24):** `kap/utils.py` adds composite commands (resolve-ticker/fund,
+ticker-disclosures, ticker-financials, fund-info, fund-disclosures) shown in a separate
+"Utilities" help panel. They resolve a ticker/fund (over members/funds, exact-code-then-partial-name)
+and run the recency backward-scan. KapClient stays the thin 1:1 wrapper. fund-disclosures returns
+disclosures filed under the fund's management company (fundCompanyId), covering all funds managed by
+that company — this is how KAP files them, confirmed by live verification.
+
 ---
 
 ## 1. Why this exists / scope
