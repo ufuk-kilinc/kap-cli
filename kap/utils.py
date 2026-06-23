@@ -46,3 +46,48 @@ def resolve_one(matches: list[JsonObj], query: str, what: str, describe: Callabl
             "Narrow it or use the exact code."
         )
     return matches[0]
+
+
+@dataclass
+class ScanResult:
+    items: list[JsonObj]
+    truncated: bool
+    windows: int
+
+
+def scan_disclosures(
+    client: KapClient,
+    company_id: str | int,
+    limit: int,
+    disclosure_class: str | None = None,
+    *,
+    window: int = 36000,
+    max_windows: int = 30,
+) -> ScanResult:
+    """Collect an entity's most recent disclosures by walking BACKWARD from the latest index.
+
+    The disclosures endpoint scans a bounded ~36k-index window forward from a start index and
+    caps at 50; this tiles windows backward from last-index, deduping by disclosureIndex, until
+    `limit` are gathered (or `max_windows` is reached). Returns newest-first.
+    """
+    last = client.last_disclosure_index()
+    found: dict[int, JsonObj] = {}
+    truncated = False
+    start = max(0, last - window)
+    windows = 0
+    while len(found) < limit and windows < max_windows:
+        page = client.disclosures(start, disclosure_class=disclosure_class, company_id=company_id)
+        if len(page) >= 50:
+            truncated = True
+        for item in page:
+            try:
+                idx = int(item["disclosureIndex"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            found[idx] = item
+        windows += 1
+        if start == 0:
+            break
+        start = max(0, start - window)
+    ordered = [item for _, item in sorted(found.items(), key=lambda kv: kv[0], reverse=True)]
+    return ScanResult(items=ordered[:limit], truncated=truncated, windows=windows)

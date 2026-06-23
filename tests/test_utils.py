@@ -1,6 +1,6 @@
 import pytest
 
-from kap.utils import resolve_company, resolve_fund, resolve_one
+from kap.utils import ScanResult, resolve_company, resolve_fund, resolve_one, scan_disclosures
 
 
 class FakeClient:
@@ -79,3 +79,43 @@ def test_resolve_one_multiple_raises_with_list():
     matches = [{"fundCode": "BON"}, {"fundCode": "DGF"}]
     with pytest.raises(ValueError, match="ambiguous"):
         resolve_one(matches, "A1", "fund", lambda f: f["fundCode"])
+
+
+def _d(idx):
+    return {"disclosureIndex": str(idx), "title": f"d{idx}"}
+
+
+def test_scan_collects_newest_first_to_limit():
+    # window=50, last=200 → starts 150, 100, 50, 0
+    pages = {150: [_d(180), _d(160)], 100: [_d(120)], 50: [_d(70)], 0: [_d(10)]}
+    client = FakeClient(pages=pages, last=200)
+    result = scan_disclosures(client, "C", limit=3, window=50, max_windows=10)
+    assert isinstance(result, ScanResult)
+    assert [d["disclosureIndex"] for d in result.items] == ["180", "160", "120"]
+    assert result.truncated is False
+
+
+def test_scan_dedupes_overlapping_windows():
+    pages = {150: [_d(180)], 100: [_d(180), _d(120)]}
+    client = FakeClient(pages=pages, last=200)
+    result = scan_disclosures(client, "C", limit=10, window=50, max_windows=2)
+    idxs = [d["disclosureIndex"] for d in result.items]
+    assert idxs == ["180", "120"]  # 180 not duplicated
+
+
+def test_scan_passes_disclosure_class_and_company_id():
+    client = FakeClient(pages={0: [_d(1)]}, last=10)
+    scan_disclosures(client, "866", limit=5, disclosure_class="FR", window=50)
+    assert client.calls[0] == (0, "FR", "866")
+
+
+def test_scan_respects_max_windows():
+    client = FakeClient(pages={}, last=10_000)
+    scan_disclosures(client, "C", limit=99, window=100, max_windows=3)
+    assert len(client.calls) == 3
+
+
+def test_scan_sets_truncated_when_window_returns_50():
+    client = FakeClient(pages={0: [_d(i) for i in range(50)]}, last=10)
+    result = scan_disclosures(client, "C", limit=5, window=50)
+    assert result.truncated is True
