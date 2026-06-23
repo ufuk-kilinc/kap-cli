@@ -77,11 +77,12 @@ def test_other_error_raises():
 
 
 @respx.mock
-def test_token_error_retries_once_then_succeeds():
+@pytest.mark.parametrize("code", ["ER004", "ER006", "ER012"])
+def test_token_error_retries_once_then_succeeds(code):
     auth = _StubAuth()
     respx.get("https://h/api/vyk/funds").mock(
         side_effect=[
-            httpx.Response(401, json={"code": "ER004", "message": "bad token"}),
+            httpx.Response(401, json={"code": code, "message": "bad token"}),
             httpx.Response(200, json=[{"a": 1}]),
         ]
     )
@@ -91,13 +92,15 @@ def test_token_error_retries_once_then_succeeds():
 
 
 @respx.mock
-def test_token_error_twice_raises():
+@pytest.mark.parametrize("code", ["ER004", "ER006", "ER012"])
+def test_token_error_twice_raises(code):
     auth = _StubAuth()
     respx.get("https://h/api/vyk/funds").mock(
-        return_value=httpx.Response(401, json={"code": "ER004", "message": "bad token"})
+        return_value=httpx.Response(401, json={"code": code, "message": "bad token"})
     )
     with pytest.raises(KapApiError):
         _client(auth).funds()
+    assert auth.invalidated == 1
 
 
 @respx.mock

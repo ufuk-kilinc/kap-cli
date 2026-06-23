@@ -100,6 +100,10 @@ class KapClient:
         return self._get_list("api/vyk/caEventStatus", {"processRefId": joined})
 
     def raw(self, path: str, query: dict[str, str] | None = None) -> dict:
+        """Diagnostic passthrough: GET any relative path and return the raw response
+        metadata + body. Unlike the typed methods, this does NOT retry on token
+        errors and does NOT raise on non-2xx — the status code and body are returned
+        as-is for inspection."""
         resp = self._send(path.lstrip("/"), query)
         return {
             "service": path,
