@@ -19,6 +19,9 @@ class _FakeClient:
     def members(self):
         return [{"companyId": 1, "title": "ACME"}]
 
+    def funds(self):
+        return []
+
     def disclosures(self, index, disclosure_type=None, disclosure_class=None, company_id=None):
         self.calls.append(("disclosures", index, disclosure_class, company_id))
         return [{"disclosureIndex": index}]
@@ -40,7 +43,7 @@ class _FakeClient:
 @pytest.fixture
 def fake_client(monkeypatch):
     fc = _FakeClient()
-    monkeypatch.setattr(cli, "_make_client", lambda ctx: fc)
+    monkeypatch.setattr(cli, "_make_client", lambda env: fc)
     return fc
 
 
@@ -57,7 +60,7 @@ def test_members_table(fake_client):
 
 
 def test_members_json(fake_client):
-    result = runner.invoke(cli.app, ["--format", "json", "members"])
+    result = runner.invoke(cli.app, ["members", "--format", "json"])
     assert result.exit_code == 0
     assert '"title": "ACME"' in result.stdout
 
@@ -89,5 +92,6 @@ def test_api_error_exits_nonzero_with_message(fake_client, monkeypatch):
 
     monkeypatch.setattr(fake_client, "funds", boom, raising=False)
     result = runner.invoke(cli.app, ["funds"])
-    assert result.exit_code != 0
-    assert "ER001" in result.stdout or "denied" in result.stdout
+    assert result.exit_code == 1
+    combined = result.output + (getattr(result, "stderr", "") or "")
+    assert "ER001" in combined or "denied" in combined

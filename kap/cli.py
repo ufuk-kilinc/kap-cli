@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import sys
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 
 import typer
 from rich.console import Console
@@ -12,156 +12,173 @@ from kap.config import load_config
 from kap.errors import KapError
 from kap.render import decode_disclosure_bodies, output
 
+# Force UTF-8 so Turkish help text and disclosure data never crash on a
+# cp1252 (default Windows) terminal.
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if _reconfigure is not None:
+        try:
+            _reconfigure(encoding="utf-8")
+        except (ValueError, OSError):
+            pass
+
 app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
-    help="CLI for the KAP Veri Yayın Servisi REST API (MKK / Borsa İstanbul).",
+    help="CLI for the KAP (Borsa Istanbul) disclosure data API.",
 )
 _err_console = Console(stderr=True)
 
-
-@dataclass
-class State:
-    env: Optional[str] = None
-    fmt: Optional[str] = None
-    out: Optional[Path] = None
-    verbose: bool = False
+# Shared output options — available AFTER each command, e.g. `kap members --format json`.
+EnvOpt = Annotated[Optional[str], typer.Option("--env", help="test | production (overrides .env).")]
+FormatOpt = Annotated[Optional[str], typer.Option("--format", "-f", help="table | json | csv.")]
+OutOpt = Annotated[Optional[Path], typer.Option("--out", "-o", help="Write output to this file.")]
+VerboseOpt = Annotated[bool, typer.Option("--verbose", "-v", help="Show full error detail.")]
 
 
-@app.callback()
-def main(
-    ctx: typer.Context,
-    env: Optional[str] = typer.Option(None, "--env", help="test | production (overrides .env)."),
-    fmt: Optional[str] = typer.Option(None, "--format", "-f", help="table | json | csv."),
-    out: Optional[Path] = typer.Option(None, "--out", "-o", help="Write output to this file."),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show full error detail."),
-):
-    ctx.obj = State(env=env, fmt=fmt, out=out, verbose=verbose)
+def _make_client(env: Optional[str]) -> KapClient:
+    return KapClient(load_config(env))
 
 
-def _make_client(ctx: typer.Context) -> KapClient:
-    return KapClient(load_config(ctx.obj.env))
-
-
-def _run(ctx: typer.Context, fn, *, decode: bool = False, raw_bytes: bool = False, default_name: str | None = None):
-    """Execute a client call, render output, and translate errors to clean exits."""
-    state: State = ctx.obj
+def _run(env, fmt, out, fn, *, decode: bool = False) -> None:
     try:
-        client = _make_client(ctx)
+        client = _make_client(env)
         try:
             data = fn(client)
         finally:
             client.close()
-    except KapError as exc:
-        typer.echo(str(exc), err=False)
+    except (KapError, ValueError) as exc:
+        _err_console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(code=1)
-
-    if raw_bytes:
-        if data is None:
-            _err_console.print("[yellow]Not found.[/yellow]")
-            raise typer.Exit(code=1)
-        target = state.out or Path(default_name or "attachment.pdf")
-        target.write_bytes(data)
-        print(f"Saved {len(data)} bytes to {target}")
-        return
-
     if decode and isinstance(data, dict):
         data = decode_disclosure_bodies(data)
-    output(data, fmt=state.fmt, out=state.out)
+    output(data, fmt=fmt, out=out)
+
+
+def _save_bytes(env, out, fn, default_name: str) -> None:
+    try:
+        client = _make_client(env)
+        try:
+            data = fn(client)
+        finally:
+            client.close()
+    except (KapError, ValueError) as exc:
+        _err_console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1)
+    if data is None:
+        _err_console.print("[yellow]Not found.[/yellow]")
+        raise typer.Exit(code=1)
+    target = out or Path(default_name)
+    target.write_bytes(data)
+    print(f"Saved {len(data)} bytes to {target}")
 
 
 @app.command("last-index")
-def last_index(ctx: typer.Context):
+def last_index(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """Latest published disclosure id (use as a polling cursor)."""
-    _run(ctx, lambda c: c.last_disclosure_index())
+    _run(env, fmt, out, lambda c: c.last_disclosure_index())
 
 
 @app.command()
 def disclosures(
-    ctx: typer.Context,
-    index: int = typer.Option(..., "--index", help="Start disclosure index (required)."),
-    type_: Optional[str] = typer.Option(None, "--type", help="disclosureType filter."),
-    class_: Optional[str] = typer.Option(None, "--class", help="disclosureClass filter (e.g. FR)."),
-    company_id: Optional[int] = typer.Option(None, "--company-id", help="companyId filter."),
+    index: Annotated[int, typer.Option("--index", help="Start disclosure index (required).")],
+    type_: Annotated[Optional[str], typer.Option("--type", help="disclosureType filter.")] = None,
+    class_: Annotated[Optional[str], typer.Option("--class", help="disclosureClass filter (e.g. FR).")] = None,
+    company_id: Annotated[Optional[int], typer.Option("--company-id", help="companyId filter.")] = None,
+    env: EnvOpt = None,
+    fmt: FormatOpt = None,
+    out: OutOpt = None,
+    verbose: VerboseOpt = False,
 ):
     """First 50 disclosures from --index onward (optionally filtered)."""
-    _run(ctx, lambda c: c.disclosures(index, type_, class_, company_id))
+    _run(env, fmt, out, lambda c: c.disclosures(index, type_, class_, company_id))
 
 
 @app.command("disclosure-detail")
 def disclosure_detail(
-    ctx: typer.Context,
-    index: int = typer.Argument(..., help="Disclosure index."),
-    file_type: str = typer.Option("data", "--file-type", help="data | html."),
-    sub_report: Optional[str] = typer.Option(None, "--sub-report", help="subReportList id."),
+    index: Annotated[int, typer.Argument(help="Disclosure index.")],
+    file_type: Annotated[str, typer.Option("--file-type", help="data | html.")] = "data",
+    sub_report: Annotated[Optional[str], typer.Option("--sub-report", help="subReportList id.")] = None,
+    env: EnvOpt = None,
+    fmt: FormatOpt = None,
+    out: OutOpt = None,
+    verbose: VerboseOpt = False,
 ):
     """Full detail for one disclosure (base64 bodies decoded to readable text)."""
-    _run(ctx, lambda c: c.disclosure_detail(index, file_type, sub_report), decode=True)
+    _run(env, fmt, out, lambda c: c.disclosure_detail(index, file_type, sub_report), decode=True)
 
 
 @app.command("download-attachment")
 def download_attachment(
-    ctx: typer.Context,
-    attachment_id: str = typer.Argument(..., help="Attachment id (last path segment of an attachment url)."),
-    out: Optional[Path] = typer.Option(None, "--out", "-o", help="Write PDF to this file path."),
+    attachment_id: Annotated[str, typer.Argument(help="Attachment id (last path segment of an attachment url).")],
+    out: OutOpt = None,
+    env: EnvOpt = None,
 ):
     """Download a disclosure attachment PDF (Java envelope auto-unwrapped)."""
-    # local --out overrides the global one for raw-bytes commands
-    if out is not None:
-        ctx.obj.out = out
-    _run(ctx, lambda c: c.download_attachment(attachment_id),
-         raw_bytes=True, default_name=f"{attachment_id}.pdf")
+    _save_bytes(env, out, lambda c: c.download_attachment(attachment_id), f"{attachment_id}.pdf")
 
 
 @app.command()
-def members(ctx: typer.Context):
+def members(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """All KAP-member companies."""
-    _run(ctx, lambda c: c.members())
+    _run(env, fmt, out, lambda c: c.members())
 
 
 @app.command()
-def funds(ctx: typer.Context):
+def funds(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """All funds."""
-    _run(ctx, lambda c: c.funds())
+    _run(env, fmt, out, lambda c: c.funds())
 
 
 @app.command("fund-detail")
-def fund_detail(ctx: typer.Context, fund_id: int = typer.Argument(..., help="Fund id.")):
+def fund_detail(
+    fund_id: Annotated[int, typer.Argument(help="Fund id.")],
+    env: EnvOpt = None,
+    fmt: FormatOpt = None,
+    out: OutOpt = None,
+    verbose: VerboseOpt = False,
+):
     """General-info sections for one fund."""
-    _run(ctx, lambda c: c.fund_detail(fund_id))
+    _run(env, fmt, out, lambda c: c.fund_detail(fund_id))
 
 
 @app.command("member-securities")
-def member_securities(ctx: typer.Context):
+def member_securities(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """Listed (IGS) companies with their securities (ISIN-level)."""
-    _run(ctx, lambda c: c.member_securities())
+    _run(env, fmt, out, lambda c: c.member_securities())
 
 
 @app.command("blocked-disclosures")
-def blocked_disclosures(ctx: typer.Context):
+def blocked_disclosures(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """Disclosures blocked from access in KAP."""
-    _run(ctx, lambda c: c.blocked_disclosures())
+    _run(env, fmt, out, lambda c: c.blocked_disclosures())
 
 
 @app.command("ca-event-status")
 def ca_event_status(
-    ctx: typer.Context,
-    ref_ids: list[int] = typer.Argument(..., help="One or more processRefId values."),
+    ref_ids: Annotated[list[int], typer.Argument(help="One or more processRefId values.")],
+    env: EnvOpt = None,
+    fmt: FormatOpt = None,
+    out: OutOpt = None,
+    verbose: VerboseOpt = False,
 ):
     """Corporate-action (rights-usage) process status for the given ref ids."""
-    _run(ctx, lambda c: c.ca_event_status(ref_ids))
+    _run(env, fmt, out, lambda c: c.ca_event_status(ref_ids))
 
 
 @app.command()
 def raw(
-    ctx: typer.Context,
-    path: str = typer.Argument(..., help="Relative path, e.g. api/vyk/members."),
-    query: list[str] = typer.Option([], "--query", help="Query as key=value (repeatable)."),
+    path: Annotated[str, typer.Argument(help="Relative path, e.g. api/vyk/members.")],
+    query: Annotated[Optional[list[str]], typer.Option("--query", help="Query as key=value (repeatable).")] = None,
+    env: EnvOpt = None,
+    fmt: FormatOpt = None,
+    out: OutOpt = None,
+    verbose: VerboseOpt = False,
 ):
     """Raw exploration probe: call any relative path and dump the response."""
-    params = {}
-    for item in query:
+    params: dict[str, str] = {}
+    for item in query or []:
         if "=" in item:
-            k, v = item.split("=", 1)
-            params[k] = v
-    _run(ctx, lambda c: c.raw(path, params or None))
+            key, value = item.split("=", 1)
+            params[key] = value
+    _run(env, fmt, out, lambda c: c.raw(path, params or None))
