@@ -24,33 +24,36 @@ for _stream in (sys.stdout, sys.stderr):
         except (ValueError, OSError):
             pass
 
-# Command → KAP endpoint, rendered as an aligned yellow column in kap --help.
-_ENDPOINTS: list[tuple[str, str]] = [
-    ("last-index", "GET /api/vyk/lastDisclosureIndex"),
-    ("disclosures", "GET /api/vyk/disclosures"),
-    ("disclosure-detail", "GET /api/vyk/disclosureDetail/{index}"),
-    ("download-attachment", "GET /api/vyk/downloadAttachment/{id}"),
-    ("members", "GET /api/vyk/members"),
-    ("funds", "GET /api/vyk/funds"),
-    ("fund-detail", "GET /api/vyk/fundDetail/{id}"),
-    ("member-securities", "GET /api/vyk/memberSecurities"),
-    ("blocked-disclosures", "GET /api/vyk/blockedDisclosures"),
-    ("ca-event-status", "GET /api/vyk/caEventStatus"),
-    ("raw", "GET /<path>"),
-]
-_cmd_w = max(len(name) for name, _ in _ENDPOINTS)
-_endpoint_block = "\n\n".join(
-    f"[cyan]{name.ljust(_cmd_w)}[/cyan]   [yellow]{endpoint}[/yellow]"
-    for name, endpoint in _ENDPOINTS
-)
+# Command → KAP endpoint (single source of truth; shown in yellow in the Commands panel).
+_ENDPOINTS: dict[str, str] = {
+    "last-index": "GET /api/vyk/lastDisclosureIndex",
+    "disclosures": "GET /api/vyk/disclosures",
+    "disclosure-detail": "GET /api/vyk/disclosureDetail/{index}",
+    "download-attachment": "GET /api/vyk/downloadAttachment/{id}",
+    "members": "GET /api/vyk/members",
+    "funds": "GET /api/vyk/funds",
+    "fund-detail": "GET /api/vyk/fundDetail/{id}",
+    "member-securities": "GET /api/vyk/memberSecurities",
+    "blocked-disclosures": "GET /api/vyk/blockedDisclosures",
+    "ca-event-status": "GET /api/vyk/caEventStatus",
+    "raw": "GET /<path>",
+}
+
+
+_URL_W = max(len(url) for url in _ENDPOINTS.values())
+
+
+def _help(name: str, summary: str) -> str:
+    """Commands-panel short help: the endpoint (yellow, padded to a column) + a summary."""
+    return f"[yellow]{_ENDPOINTS[name].ljust(_URL_W)}[/yellow]  {summary}"
+
 
 _EPILOG = (
     "Set your API key in [cyan]~/.kap/.env[/cyan] (KAP_PROD_API_KEY / KAP_TEST_API_KEY). "
     "Run [cyan]kap COMMAND --help[/cyan] for a command's own arguments.\n\n"
     "[bold]Common options[/bold] (on every command, placed AFTER it — e.g. "
     "[cyan]kap members --format json[/cyan]):  [cyan]-f/--format[/cyan] \\[table|json|csv], "
-    "[cyan]-o/--out[/cyan] PATH, [cyan]--env[/cyan] \\[test|production], [cyan]-v/--verbose[/cyan].\n\n"
-    "[bold]Endpoint called by each command:[/bold]\n\n" + _endpoint_block
+    "[cyan]-o/--out[/cyan] PATH, [cyan]--env[/cyan] \\[test|production], [cyan]-v/--verbose[/cyan]."
 )
 
 app = typer.Typer(
@@ -126,7 +129,7 @@ def _save_bytes(
         print(f"Saved {len(data)} bytes to {target}")
 
 
-@app.command("last-index")
+@app.command("last-index", short_help=_help("last-index", "latest disclosure id (cursor)"))
 def last_index(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """Latest published disclosure id (a market-wide cursor).
 
@@ -139,7 +142,7 @@ def last_index(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, ve
     _run(env, fmt, out, lambda c: c.last_disclosure_index(), verbose=verbose)
 
 
-@app.command()
+@app.command(short_help=_help("disclosures", "first 50 from --index (filterable)"))
 def disclosures(
     index: Annotated[int, typer.Option("--index", help="Start disclosure index (required).")],
     type_: Annotated[Optional[str], typer.Option("--type", help="disclosureType filter.")] = None,
@@ -169,7 +172,7 @@ def disclosures(
     )
 
 
-@app.command("disclosure-detail")
+@app.command("disclosure-detail", short_help=_help("disclosure-detail", "one disclosure's full detail"))
 def disclosure_detail(
     index: Annotated[int, typer.Argument(help="Disclosure index.")],
     file_type: Annotated[Literal["data", "html"], typer.Option("--file-type", help="data | html.")] = "data",
@@ -192,7 +195,7 @@ def disclosure_detail(
     _run(env, fmt, out, lambda c: c.disclosure_detail(index, file_type, sub_report), decode=True, verbose=verbose)
 
 
-@app.command("download-attachment")
+@app.command("download-attachment", short_help=_help("download-attachment", "download an attachment PDF"))
 def download_attachment(
     attachment_id: Annotated[str, typer.Argument(help="Attachment id (last path segment of an attachment url).")],
     out: OutOpt = None,
@@ -210,7 +213,7 @@ def download_attachment(
     _save_bytes(env, out, lambda c: c.download_attachment(attachment_id), f"{attachment_id}.pdf", verbose=verbose)
 
 
-@app.command()
+@app.command(short_help=_help("members", "all KAP-member companies"))
 def members(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """All KAP-member companies (id, title, stock code, type).
 
@@ -222,7 +225,7 @@ def members(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbo
     _run(env, fmt, out, lambda c: c.members(), verbose=verbose)
 
 
-@app.command()
+@app.command(short_help=_help("funds", "all funds"))
 def funds(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """All funds.
 
@@ -233,7 +236,7 @@ def funds(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose
     _run(env, fmt, out, lambda c: c.funds(), verbose=verbose)
 
 
-@app.command("fund-detail")
+@app.command("fund-detail", short_help=_help("fund-detail", "one fund's info sections"))
 def fund_detail(
     fund_id: Annotated[int, typer.Argument(help="Fund id.")],
     env: EnvOpt = None,
@@ -250,7 +253,7 @@ def fund_detail(
     _run(env, fmt, out, lambda c: c.fund_detail(fund_id), verbose=verbose)
 
 
-@app.command("member-securities")
+@app.command("member-securities", short_help=_help("member-securities", "listed companies' securities (ISIN)"))
 def member_securities(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """Listed (IGS) companies with their securities (ISIN-level).
 
@@ -261,7 +264,7 @@ def member_securities(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = N
     _run(env, fmt, out, lambda c: c.member_securities(), verbose=verbose)
 
 
-@app.command("blocked-disclosures")
+@app.command("blocked-disclosures", short_help=_help("blocked-disclosures", "blocked disclosures"))
 def blocked_disclosures(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose: VerboseOpt = False):
     """Disclosures blocked from access in KAP.
 
@@ -272,7 +275,7 @@ def blocked_disclosures(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt =
     _run(env, fmt, out, lambda c: c.blocked_disclosures(), verbose=verbose)
 
 
-@app.command("ca-event-status")
+@app.command("ca-event-status", short_help=_help("ca-event-status", "corporate-action status"))
 def ca_event_status(
     ref_ids: Annotated[list[int], typer.Argument(help="One or more processRefId values.")],
     env: EnvOpt = None,
@@ -290,7 +293,7 @@ def ca_event_status(
     _run(env, fmt, out, lambda c: c.ca_event_status(ref_ids), verbose=verbose)
 
 
-@app.command()
+@app.command(short_help=_help("raw", "probe any relative path"))
 def raw(
     path: Annotated[str, typer.Argument(help="Relative path, e.g. api/vyk/members.")],
     query: Annotated[Optional[list[str]], typer.Option("--query", help="Query as key=value (repeatable).")] = None,
