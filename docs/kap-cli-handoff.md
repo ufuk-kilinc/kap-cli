@@ -3,7 +3,7 @@
 > **Read this first.** This is the canonical, checked-in memory for `kap-cli`: what it is, how to run
 > it, the hard-won KAP domain knowledge, the full command reference, the architecture, and the progress
 > log. It travels with the repo so anyone who clones it (research team or a future developer) has the
-> whole picture. **Last updated 2026-06-24** (`main` @ `ceb09cc`).
+> whole picture. **Last updated 2026-06-24** (`main` @ `35cb147`).
 >
 > Companion docs: `README.md` (quickstart), `docs/superpowers/specs|plans/*` (per-feature design/plans),
 > and the upstream API contract this wraps: `../tuneup-api/docs/kap-integration.md`.
@@ -221,6 +221,7 @@ allowlisted IP.
   finder (now surfacing `attachmentUrls`) + the existing `download-attachment` `%PDF` unwrap; `--out` /
   `--out-dir` (KAP's own filenames, path-safe). DRY'd the shared `--from/--to` validation into
   `_validate_period_range`. Live-verified (`BON_2026.04.pdf`, valid PDF).
+- **2026-06-24 — `--out` directory auto-naming** (`35cb147`): `--out <existing dir>` writes a sensibly-named file into it (`<command>.<ext>` for data; the attachment/PDF's own name for downloads) instead of `[Errno 13]`; all "Saved" lines now print the absolute resolved path.
 
 Per-feature specs/plans + reviews are under `docs/superpowers/`. SDD scratch (briefs/reports/diffs) is in
 `.superpowers/` (gitignored).
