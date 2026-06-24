@@ -3,6 +3,10 @@
 Command-line access to every endpoint of the **KAP Veri Yayın Servisi** REST API
 (MKK / Borsa İstanbul), for the research team.
 
+> 📖 **New here? Read [`docs/kap-cli-handoff.md`](docs/kap-cli-handoff.md)** — the project memory:
+> full command/utility reference, the KAP domain gotchas (auth, IP allowlist, data shapes), architecture,
+> and progress log.
+
 ## Install
 
 ```bash
