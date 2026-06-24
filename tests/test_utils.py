@@ -237,3 +237,10 @@ def test_finder_truncates_on_max_details():
     client = _make_finder_client()
     result = find_fund_portfolio_reports(client, "BON", "C", from_period="2000-01", to_period="2999-12", window=1000, max_details=1)
     assert result.truncated is True
+
+
+def test_enumerate_window_skips_unparseable_index():
+    pages = {1: [{"disclosureType": "FON"}, _fon(2)]}  # first row has no disclosureIndex
+    client = FakeClient(pages=pages)
+    rows = _enumerate_window(client, "C", 1, 100)
+    assert [int(r["disclosureIndex"]) for r in rows] == [2]

@@ -549,7 +549,7 @@ def fund_portfolio_report_cmd(
     for label, value in (("--from", from_period), ("--to", to_period)):
         if value is not None and not _PERIOD_RE_CLI.match(value):
             raise typer.BadParameter(f"{label} must be YYYY-MM, got '{value}'")
-    if from_period and to_period and from_period > to_period:
+    if from_period is not None and to_period is not None and from_period > to_period:
         raise typer.BadParameter(f"--from ({from_period}) is after --to ({to_period})")
     with _errors(verbose):
         validate_format(fmt)

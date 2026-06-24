@@ -269,3 +269,9 @@ def test_fund_portfolio_report_bad_period_format(fake_client):
     result = runner.invoke(cli.app, ["fund-portfolio-report", "BON", "--from", "2026-1"])
     assert result.exit_code != 0
     assert "YYYY-MM" in (result.stderr + result.stdout)
+
+
+def test_fund_portfolio_report_from_after_to(fake_client):
+    result = runner.invoke(cli.app, ["fund-portfolio-report", "BON", "--from", "2026-06", "--to", "2026-01"])
+    assert result.exit_code != 0
+    assert "after" in (result.stderr + result.stdout)

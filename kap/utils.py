@@ -126,6 +126,14 @@ def parse_report_period(detail: JsonObj) -> str | None:
     return f"{match.group(1)}-{int(match.group(2)):02d}"
 
 
+def _row_idx(row: JsonObj) -> int | None:
+    """Parse a row's disclosureIndex to int, or None if missing/non-numeric (skip such rows)."""
+    try:
+        return int(row["disclosureIndex"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def _enumerate_window(client: KapClient, company_id: str | int, win_start: int, win_end: int) -> list[JsonObj]:
     """All of a company's disclosure rows with win_start <= disclosureIndex <= win_end.
 
@@ -134,12 +142,16 @@ def _enumerate_window(client: KapClient, company_id: str | int, win_start: int, 
     cur = win_start
     rows: list[JsonObj] = []
     while cur <= win_end:
-        page = client.disclosures(cur, company_id=company_id)
-        page = [r for r in page if int(r["disclosureIndex"]) <= win_end]
+        raw_page = client.disclosures(cur, company_id=company_id)
+        page = []
+        for r in raw_page:
+            idx = _row_idx(r)
+            if idx is not None and idx <= win_end:
+                page.append((idx, r))
         if not page:
             break
-        rows.extend(page)
-        hi = max(int(r["disclosureIndex"]) for r in page)
+        rows.extend(r for _, r in page)
+        hi = max(idx for idx, _ in page)
         if len(page) < 50 or hi <= cur:
             break
         cur = hi + 1
@@ -184,13 +196,13 @@ def find_fund_portfolio_reports(
     while win_end >= 0 and windows < max_windows and not done:
         win_start = max(0, win_end - window)
         rows = _enumerate_window(client, company_id, win_start, win_end)
-        fon = sorted(
-            (r for r in rows if r.get("disclosureType") == "FON"),
-            key=lambda r: int(r["disclosureIndex"]),
-            reverse=True,
-        )
-        for row in fon:
-            idx = int(row["disclosureIndex"])
+        fon = [
+            (idx, r)
+            for r in rows
+            if r.get("disclosureType") == "FON" and (idx := _row_idx(r)) is not None
+        ]
+        fon.sort(key=lambda pair: pair[0], reverse=True)
+        for idx, row in fon:
             if idx in seen:
                 continue
             if details >= max_details:
