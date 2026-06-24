@@ -31,6 +31,9 @@ ticker-disclosures, ticker-financials, fund-info, fund-disclosures) shown in a s
 and run the recency backward-scan. KapClient stays the thin 1:1 wrapper. fund-disclosures returns
 disclosures filed under the fund's management company (fundCompanyId), covering all funds managed by
 that company — this is how KAP files them, confirmed by live verification.
+fund-portfolio-report resolves a fund → scans its management company's FON disclosures (forward-paginated
+to beat the 50-row cap) → matches subject "Portföy Dağılım Raporu" + behalfFundCode; default latest,
+--from/--to (YYYY-MM by report period) for a range.
 
 ---
 
