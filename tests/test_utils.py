@@ -2,6 +2,7 @@ import pytest
 
 from kap.utils import ScanResult, parse_report_period, _enumerate_window, resolve_company, resolve_fund, resolve_one, scan_disclosures
 from kap.utils import PortfolioReportResult, find_fund_portfolio_reports
+from kap.utils import attachment_id_from_url
 
 
 class FakeClient:
@@ -244,3 +245,17 @@ def test_enumerate_window_skips_unparseable_index():
     client = FakeClient(pages=pages)
     rows = _enumerate_window(client, "C", 1, 100)
     assert [int(r["disclosureIndex"]) for r in rows] == [2]
+
+
+def test_attachment_id_from_url():
+    assert attachment_id_from_url("https://h/api/vyk/downloadAttachment/ABC123") == "ABC123"
+    assert attachment_id_from_url("https://h/api/vyk/downloadAttachment/ABC123/") == "ABC123"
+
+
+def test_finder_item_includes_attachment_urls():
+    atts = [{"url": "https://h/api/vyk/downloadAttachment/AID", "fileName": "BON_2026.03.pdf"}]
+    detail = _pdr_detail(90, "BON", "2026 / 3.Ay")
+    detail["attachmentUrls"] = atts
+    client = FakeClient(pages={0: [_fon(90)]}, details={90: detail}, last=100)
+    result = find_fund_portfolio_reports(client, "BON", "C", window=1000)
+    assert result.items[0]["attachmentUrls"] == atts
