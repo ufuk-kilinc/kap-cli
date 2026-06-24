@@ -69,7 +69,7 @@ KAP_TEST_API_KEY=<test-key>
 - ⚠️ **You must be on an allowlisted egress IP** (see §5) or calls hang then fail with a connectivity hint.
 
 **Common options** go AFTER the command (e.g. `kap members --format json`): `-f/--format table|json|csv`,
-`-o/--out PATH` (format inferred from extension), `--env`, `-v/--verbose` (traceback on error).
+`-o/--out PATH` (format inferred from extension; may be a directory — the tool writes `<command>.<ext>` (or the attachment/PDF's own filename) into it and prints the saved path), `--env`, `-v/--verbose` (traceback on error).
 
 ---
 

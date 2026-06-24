@@ -95,13 +95,13 @@ def _describe_fund(f: dict) -> str:
     return f"{f.get('fundCode')} — {f.get('fundName')}"
 
 
-def _render_scan(fmt: Optional[str], out: Optional[Path], result: ScanResult) -> None:
+def _render_scan(fmt: Optional[str], out: Optional[Path], result: ScanResult, out_name: str = "output") -> None:
     if result.truncated:
         _err_console.print(
             "[yellow]Note:[/yellow] some windows hit the 50-result cap; very active filers may be "
             "incomplete — raise --limit."
         )
-    output(result.items, fmt=fmt, out=out)
+    output(result.items, fmt=fmt, out=out, default_stem=out_name)
 
 
 # Shared output options — available AFTER each command, e.g. kap members --format json.
@@ -139,6 +139,7 @@ def _run(
     *,
     decode: bool = False,
     verbose: bool = False,
+    out_name: str = "output",
 ) -> None:
     with _errors(verbose):
         validate_format(fmt)  # fail fast before any network call
@@ -146,7 +147,7 @@ def _run(
             data = fn(client)
         if decode and isinstance(data, dict):
             data = decode_disclosure_bodies(data)
-        output(data, fmt=fmt, out=out)
+        output(data, fmt=fmt, out=out, default_stem=out_name)
 
 
 def _save_bytes(
@@ -163,9 +164,12 @@ def _save_bytes(
         if data is None:
             _err_console.print("[yellow]Not found.[/yellow]")
             raise typer.Exit(code=1)
-        target = out or Path(default_name)
+        if out is not None and out.is_dir():
+            target = out / default_name
+        else:
+            target = out or Path(default_name)
         target.write_bytes(data)
-        print(f"Saved {len(data)} bytes to {target}")
+        print(f"Saved {len(data)} bytes to {target.resolve()}")
 
 
 @app.command("last-index", short_help=_help("last-index", "latest disclosure id (cursor)"))
@@ -178,7 +182,7 @@ def last_index(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, ve
 
     Example: kap last-index
     """
-    _run(env, fmt, out, lambda c: c.last_disclosure_index(), verbose=verbose)
+    _run(env, fmt, out, lambda c: c.last_disclosure_index(), verbose=verbose, out_name="last-index")
 
 
 @app.command(short_help=_help("disclosures", "first 50 from --index (filterable)"))
@@ -208,6 +212,7 @@ def disclosures(
             index, disclosure_type=type_, disclosure_class=class_, company_id=company_id
         ),
         verbose=verbose,
+        out_name="disclosures",
     )
 
 
@@ -231,7 +236,7 @@ def disclosure_detail(
 
     Example: kap disclosure-detail 1619914 --file-type html
     """
-    _run(env, fmt, out, lambda c: c.disclosure_detail(index, file_type, sub_report), decode=True, verbose=verbose)
+    _run(env, fmt, out, lambda c: c.disclosure_detail(index, file_type, sub_report), decode=True, verbose=verbose, out_name="disclosure-detail")
 
 
 @app.command("download-attachment", short_help=_help("download-attachment", "download an attachment PDF"))
@@ -261,7 +266,7 @@ def members(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbo
 
     Example: kap members --out members.csv
     """
-    _run(env, fmt, out, lambda c: c.members(), verbose=verbose)
+    _run(env, fmt, out, lambda c: c.members(), verbose=verbose, out_name="members")
 
 
 @app.command(short_help=_help("funds", "all funds"))
@@ -272,7 +277,7 @@ def funds(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = None, verbose
 
     Example: kap funds --format json
     """
-    _run(env, fmt, out, lambda c: c.funds(), verbose=verbose)
+    _run(env, fmt, out, lambda c: c.funds(), verbose=verbose, out_name="funds")
 
 
 @app.command("fund-detail", short_help=_help("fund-detail", "one fund's info sections"))
@@ -289,7 +294,7 @@ def fund_detail(
 
     Example: kap fund-detail 5900
     """
-    _run(env, fmt, out, lambda c: c.fund_detail(fund_id), verbose=verbose)
+    _run(env, fmt, out, lambda c: c.fund_detail(fund_id), verbose=verbose, out_name="fund-detail")
 
 
 @app.command("member-securities", short_help=_help("member-securities", "listed companies' securities (ISIN)"))
@@ -300,7 +305,7 @@ def member_securities(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt = N
 
     Example: kap member-securities --out securities.csv
     """
-    _run(env, fmt, out, lambda c: c.member_securities(), verbose=verbose)
+    _run(env, fmt, out, lambda c: c.member_securities(), verbose=verbose, out_name="member-securities")
 
 
 @app.command("blocked-disclosures", short_help=_help("blocked-disclosures", "blocked disclosures"))
@@ -311,7 +316,7 @@ def blocked_disclosures(env: EnvOpt = None, fmt: FormatOpt = None, out: OutOpt =
 
     Example: kap blocked-disclosures
     """
-    _run(env, fmt, out, lambda c: c.blocked_disclosures(), verbose=verbose)
+    _run(env, fmt, out, lambda c: c.blocked_disclosures(), verbose=verbose, out_name="blocked-disclosures")
 
 
 @app.command("ca-event-status", short_help=_help("ca-event-status", "corporate-action status"))
@@ -329,7 +334,7 @@ def ca_event_status(
 
     Example: kap ca-event-status 111 222
     """
-    _run(env, fmt, out, lambda c: c.ca_event_status(ref_ids), verbose=verbose)
+    _run(env, fmt, out, lambda c: c.ca_event_status(ref_ids), verbose=verbose, out_name="ca-event-status")
 
 
 @app.command(short_help=_help("raw", "probe any relative path"))
@@ -355,7 +360,7 @@ def raw(
             raise typer.BadParameter(f"--query expects key=value, got '{item}'")
         key, value = item.split("=", 1)
         params[key] = value
-    _run(env, fmt, out, lambda c: c.raw(path, params or None), verbose=verbose)
+    _run(env, fmt, out, lambda c: c.raw(path, params or None), verbose=verbose, out_name="raw")
 
 
 _TICKER_ARG = Annotated[str, typer.Argument(help="Stock ticker (e.g. ASELS) or a company-name fragment.")]
@@ -382,7 +387,7 @@ def resolve_ticker_cmd(
         validate_format(fmt)
         with _make_client(env) as client:
             matches = resolve_company(client, query)
-        output(matches, fmt=fmt, out=out)
+        output(matches, fmt=fmt, out=out, default_stem="resolve-ticker")
 
 
 @app.command(
@@ -404,7 +409,7 @@ def resolve_fund_cmd(
         validate_format(fmt)
         with _make_client(env) as client:
             matches = resolve_fund(client, query)
-        output(matches, fmt=fmt, out=out)
+        output(matches, fmt=fmt, out=out, default_stem="resolve-fund")
 
 
 @app.command(
@@ -432,7 +437,7 @@ def ticker_disclosures_cmd(
         with _make_client(env) as client:
             company = resolve_one(resolve_company(client, query), query, "ticker", _describe_company)
             result = scan_disclosures(client, company["id"], limit)
-        _render_scan(fmt, out, result)
+        _render_scan(fmt, out, result, out_name="ticker-disclosures")
 
 
 @app.command(
@@ -461,7 +466,7 @@ def ticker_financials_cmd(
         with _make_client(env) as client:
             company = resolve_one(resolve_company(client, query), query, "ticker", _describe_company)
             result = scan_disclosures(client, company["id"], limit, disclosure_class="FR")
-        _render_scan(fmt, out, result)
+        _render_scan(fmt, out, result, out_name="ticker-financials")
 
 
 @app.command(
@@ -483,7 +488,7 @@ def fund_info_cmd(
         with _make_client(env) as client:
             fund = resolve_one(resolve_fund(client, query), query, "fund", _describe_fund)
             data = client.fund_detail(fund["fundId"])
-        output(data, fmt=fmt, out=out)
+        output(data, fmt=fmt, out=out, default_stem="fund-info")
 
 
 @app.command(
@@ -514,7 +519,7 @@ def fund_disclosures_cmd(
         with _make_client(env) as client:
             fund = resolve_one(resolve_fund(client, query), query, "fund", _describe_fund)
             result = scan_disclosures(client, fund["fundCompanyId"], limit)
-        _render_scan(fmt, out, result)
+        _render_scan(fmt, out, result, out_name="fund-disclosures")
 
 
 _PERIOD_RE_CLI = re.compile(r"^\d{4}-\d{2}$")
@@ -582,7 +587,7 @@ def fund_portfolio_report_cmd(
                 "[yellow]Note:[/yellow] scan bound hit (max windows/details); results may be "
                 "incomplete — narrow the --from/--to range."
             )
-        output(result.items, fmt=fmt, out=out)
+        output(result.items, fmt=fmt, out=out, default_stem="fund-portfolio-report")
 
 
 @app.command(
@@ -650,6 +655,10 @@ def fund_portfolio_pdf_cmd(
             if not downloads:
                 _err_console.print(f"[yellow]No PDF attachments found for '{query}'.[/yellow]")
                 raise typer.Exit(code=1)
+            # an existing-directory --out behaves like --out-dir
+            if out is not None and out.is_dir():
+                out_dir = out_dir if out_dir is not None else out
+                out = None
             if out is not None and len(downloads) > 1:
                 raise typer.BadParameter("multiple reports matched — use --out-dir instead of --out")
             if result.truncated:
@@ -671,7 +680,7 @@ def fund_portfolio_pdf_cmd(
                     _err_console.print(f"[yellow]Note:[/yellow] attachment {att_id} not found — skipped.")
                     continue
                 target.write_bytes(data)
-                print(f"Saved {target} ({len(data)} bytes)")
+                print(f"Saved {target.resolve()} ({len(data)} bytes)")
                 saved += 1
             if saved == 0:
                 raise typer.Exit(code=1)
