@@ -345,3 +345,20 @@ def test_fund_portfolio_pdf_download_none_exits_1(fake_client, monkeypatch, tmp_
     monkeypatch.setattr(fake_client, "download_attachment", lambda attachment_id: None, raising=False)
     result = runner.invoke(cli.app, ["fund-portfolio-pdf", "BON", "--out-dir", str(tmp_path)])
     assert result.exit_code == 1
+
+
+def test_members_out_directory_auto_names(fake_client, tmp_path):
+    result = runner.invoke(cli.app, ["members", "--out", str(tmp_path)])
+    assert result.exit_code == 0
+    saved = tmp_path / "members.json"
+    assert saved.exists()
+    import json as _json
+    data = _json.loads(saved.read_text(encoding="utf-8"))
+    assert data[0] == {"id": "1", "stockCode": "ACM", "title": "ACME"}
+    assert "Saved to" in result.stdout
+
+
+def test_download_attachment_out_directory(fake_client, tmp_path):
+    result = runner.invoke(cli.app, ["download-attachment", "abc", "--out", str(tmp_path)])
+    assert result.exit_code == 0
+    assert (tmp_path / "abc.pdf").read_bytes() == b"%PDF-1.7 bytes"

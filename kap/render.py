@@ -148,8 +148,11 @@ def _print_table(rows: list[dict], out: Path | None) -> None:
     _console.print(table)
 
 
-def output(data: Any, fmt: str | None = None, out: Path | None = None) -> None:
+def output(data: Any, fmt: str | None = None, out: Path | None = None, default_stem: str = "output") -> None:
     chosen = resolve_format(fmt, out, data)
+    if out is not None and out.is_dir():
+        ext = "csv" if chosen == "csv" else "json"
+        out = out / f"{default_stem}.{ext}"
     if chosen == "json":
         _write_text(to_json(data), out)
     elif chosen == "csv":
@@ -161,3 +164,5 @@ def output(data: Any, fmt: str | None = None, out: Path | None = None) -> None:
             _write_text(to_json(data), out)  # nested → json even if table requested
         else:
             _print_table(_as_rows(data), out)
+    if out is not None:
+        print(f"Saved to {out.resolve()}")
