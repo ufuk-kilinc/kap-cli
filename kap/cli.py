@@ -18,6 +18,7 @@ from kap.render import decode_disclosure_bodies, output, validate_format
 from kap.utils import (
     PortfolioReportResult,
     ScanResult,
+    attachment_id_from_url,
     find_fund_portfolio_reports,
     resolve_company,
     resolve_fund,
@@ -519,6 +520,15 @@ def fund_disclosures_cmd(
 _PERIOD_RE_CLI = re.compile(r"^\d{4}-\d{2}$")
 
 
+def _validate_period_range(from_period: Optional[str], to_period: Optional[str]) -> None:
+    """Validate --from/--to are YYYY-MM and correctly ordered (raises typer.BadParameter)."""
+    for label, value in (("--from", from_period), ("--to", to_period)):
+        if value is not None and not _PERIOD_RE_CLI.match(value):
+            raise typer.BadParameter(f"{label} must be YYYY-MM, got '{value}'")
+    if from_period is not None and to_period is not None and from_period > to_period:
+        raise typer.BadParameter(f"--from ({from_period}) is after --to ({to_period})")
+
+
 @app.command(
     "fund-portfolio-report",
     rich_help_panel=_UTIL_PANEL,
@@ -553,11 +563,7 @@ def fund_portfolio_report_cmd(
 
     kap fund-portfolio-report BON --from 2026-01 --to 2026-06
     """
-    for label, value in (("--from", from_period), ("--to", to_period)):
-        if value is not None and not _PERIOD_RE_CLI.match(value):
-            raise typer.BadParameter(f"{label} must be YYYY-MM, got '{value}'")
-    if from_period is not None and to_period is not None and from_period > to_period:
-        raise typer.BadParameter(f"--from ({from_period}) is after --to ({to_period})")
+    _validate_period_range(from_period, to_period)
     with _errors(verbose):
         validate_format(fmt)
         with _make_client(env) as client:
@@ -577,3 +583,95 @@ def fund_portfolio_report_cmd(
                 "incomplete — narrow the --from/--to range."
             )
         output(result.items, fmt=fmt, out=out)
+
+
+@app.command(
+    "fund-portfolio-pdf",
+    rich_help_panel=_UTIL_PANEL,
+    short_help="[magenta]composite[/magenta]  fund → download Portföy Dağılım Raporu PDF",
+)
+def fund_portfolio_pdf_cmd(
+    query: _FUND_ARG,
+    from_period: Annotated[Optional[str], typer.Option("--from", help="Start report period, YYYY-MM.")] = None,
+    to_period: Annotated[Optional[str], typer.Option("--to", help="End report period, YYYY-MM.")] = None,
+    out: OutOpt = None,
+    out_dir: Annotated[Optional[Path], typer.Option("--out-dir", help="Directory for the PDF(s).")] = None,
+    env: EnvOpt = None,
+    verbose: VerboseOpt = False,
+):
+    """Composite utility (not a single endpoint). Download a fund's Portföy Dağılım Raporu (portfolio allocation report) PDF.
+
+    What it does:
+
+    1. Resolve the fund to its management-company id — GET /api/vyk/funds
+
+    2. Find its Portföy Dağılım Raporu disclosure(s) — same scan as fund-portfolio-report
+
+    3. Download each report's attached PDF — GET /api/vyk/downloadAttachment/{id}
+
+    No range downloads the latest report's PDF; --from/--to (YYYY-MM) download every report in that range. Single report → --out FILE (defaults to KAP's own filename); multiple → --out-dir DIR.
+
+    Examples:
+
+    kap fund-portfolio-pdf BON
+
+    kap fund-portfolio-pdf BON --out latest.pdf
+
+    kap fund-portfolio-pdf BON --from 2026-01 --to 2026-06 --out-dir reports
+    """
+    _validate_period_range(from_period, to_period)
+    with _errors(verbose):
+        with _make_client(env) as client:
+            fund = resolve_one(resolve_fund(client, query), query, "fund", _describe_fund)
+            result = find_fund_portfolio_reports(
+                client, fund["fundCode"], fund["fundCompanyId"],
+                from_period=from_period, to_period=to_period,
+            )
+            if not result.items:
+                _err_console.print(
+                    f"[yellow]No Portföy Dağılım Raporu found for '{query}' in the scanned range.[/yellow]"
+                )
+                raise typer.Exit(code=1)
+
+            downloads: list[tuple[str, str]] = []  # (attachment_id, filename)
+            for item in result.items:
+                atts = item.get("attachmentUrls") or []
+                if not atts:
+                    tag = item.get("period") or item["disclosureIndex"]
+                    _err_console.print(f"[yellow]Note:[/yellow] {tag} has no PDF attachment — skipped.")
+                    continue
+                for att in atts:
+                    url = att.get("url")
+                    if not url:
+                        continue
+                    name = Path(att.get("fileName") or f"{item['disclosureIndex']}.pdf").name
+                    downloads.append((attachment_id_from_url(url), name))
+
+            if not downloads:
+                _err_console.print(f"[yellow]No PDF attachments found for '{query}'.[/yellow]")
+                raise typer.Exit(code=1)
+            if out is not None and len(downloads) > 1:
+                raise typer.BadParameter("multiple reports matched — use --out-dir instead of --out")
+            if result.truncated:
+                _err_console.print(
+                    "[yellow]Note:[/yellow] scan bound hit; results may be incomplete — narrow --from/--to."
+                )
+
+            single = len(downloads) == 1
+            saved = 0
+            for att_id, name in downloads:
+                if single and out is not None:
+                    target = out
+                else:
+                    base = out_dir if out_dir is not None else Path(".")
+                    base.mkdir(parents=True, exist_ok=True)
+                    target = base / name
+                data = client.download_attachment(att_id)
+                if data is None:
+                    _err_console.print(f"[yellow]Note:[/yellow] attachment {att_id} not found — skipped.")
+                    continue
+                target.write_bytes(data)
+                print(f"Saved {target} ({len(data)} bytes)")
+                saved += 1
+            if saved == 0:
+                raise typer.Exit(code=1)

@@ -7,6 +7,11 @@ from dataclasses import dataclass
 from kap.client import JsonObj, KapClient
 
 
+def attachment_id_from_url(url: str) -> str:
+    """The attachment id is the last non-empty path segment of an attachmentUrls[].url."""
+    return url.rstrip("/").rsplit("/", 1)[-1]
+
+
 def _dedupe(rows: list[JsonObj], key: str) -> list[JsonObj]:
     """Drop rows with a duplicate value for `key` (KAP returns exact-duplicate rows), keeping order."""
     seen: set = set()
@@ -224,6 +229,7 @@ def find_fund_portfolio_reports(
                 "period": period,
                 "fundCode": detail.get("behalfFundCode"),
                 "fundTitle": detail.get("behalfFundTitle"),
+                "attachmentUrls": detail.get("attachmentUrls") or [],
                 "presentation": detail.get("presentation"),
             }
             if not range_mode:
