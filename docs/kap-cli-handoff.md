@@ -17,10 +17,10 @@
   convenience "utilities".
 - **Where:** `C:\dev\source\tuneup\kap-cli` — its **own git repo** (NOT part of `tuneup-api`).
 - **Remote:** private GitHub `https://github.com/ufuk-kilinc/kap-cli` (`main` == origin).
-- **Status:** **COMPLETE, live-verified against PROD, in active use.** 11 core commands + 7 utilities;
+- **Status:** **COMPLETE, live-verified against PROD, in active use.** 11 core commands + 8 utilities;
   **116 tests passing**; A+/A code-review verdicts across the build. Live-verified with a real key from
   an allowlisted IP (e.g. `last-index` → 1619964; members 1124; funds 4452; `fund-portfolio-report BON`
-  → the 2026-04 report).
+  → the 2026-04 report). `fund-portfolio-pdf` downloads the report's attached PDF (reusing the finder's `attachmentUrls` + `download-attachment`'s %PDF unwrap).
 - **How it was built:** brainstorm → spec → plan → subagent-driven TDD, each task spec+quality reviewed,
   each feature closed by an Opus whole-branch review. Three shipped increments: core CLI (+A+ hardening),
   ticker/fund utilities, fund-portfolio-report.
@@ -108,6 +108,7 @@ Shown in a separate **"Utilities (convenience — not raw API endpoints)"** pane
 | `fund-info <q>` | a fund's general-info sections | resolve + `fundDetail/{id}` |
 | `fund-disclosures <q> [--limit N]` | a fund's **management-company** disclosures (covers all its funds) | resolve + paged `disclosures` (by `fundCompanyId`) |
 | `fund-portfolio-report <q> [--from YYYY-MM --to YYYY-MM]` | a fund's **Portföy Dağılım Raporu** (latest, or all in a period range) | resolve + forward-paginated FON scan + `disclosureDetail` |
+| `fund-portfolio-pdf <q> [--from YYYY-MM --to YYYY-MM] [--out/--out-dir]` | download a fund's **Portföy Dağılım Raporu PDF** (latest, or all in a range) | resolve + find report(s) + `downloadAttachment` |
 
 Resolution: exact code (case-insensitive; handles comma-joined codes like `"AKM, AKMEN"`) first, else
 partial-name substring; results deduped. For commands needing one entity, an ambiguous/not-found query

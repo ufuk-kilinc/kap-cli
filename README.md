@@ -97,6 +97,7 @@ KAP endpoint — they resolve a ticker/fund and orchestrate the right calls.
 | `fund-info <q>` | fund general-info sections | resolve + `GET /fundDetail/{id}` |
 | `fund-disclosures <q> [--limit N]` | recent disclosures for a fund's management company (covers all its funds) | resolve + paged `GET /disclosures` (by fundCompanyId) |
 | `fund-portfolio-report <q> [--from YYYY-MM --to YYYY-MM]` | a fund's Portföy Dağılım Raporu (latest, or all in a period range) | resolve + scan FON disclosures + `GET /disclosureDetail` |
+| `fund-portfolio-pdf <q> [--from/--to] [--out/--out-dir]` | download a fund's Portföy Dağılım Raporu **PDF** (latest, or all in a range) | resolve + find report(s) + `GET /downloadAttachment` |
 
 ```bash
 kap resolve-ticker ASELS
@@ -114,6 +115,11 @@ kap fund-portfolio-report BON --from 2026-01 --to 2026-06
 ```
 > `fund-portfolio-report` opens many disclosure details (the list doesn't expose subject/fund), so a
 > wide period range can be slow; the latest-only call is quick.
+
+```bash
+kap fund-portfolio-pdf BON                              # latest report PDF → KAP's own filename
+kap fund-portfolio-pdf BON --from 2026-01 --to 2026-06 --out-dir reports
+```
 
 ## Develop
 
