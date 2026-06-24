@@ -3,7 +3,7 @@
 > **Read this first.** This is the canonical, checked-in memory for `kap-cli`: what it is, how to run
 > it, the hard-won KAP domain knowledge, the full command reference, the architecture, and the progress
 > log. It travels with the repo so anyone who clones it (research team or a future developer) has the
-> whole picture. **Last updated 2026-06-24** (`main` @ `b6aace8`).
+> whole picture. **Last updated 2026-06-24** (`main` @ `ceb09cc`).
 >
 > Companion docs: `README.md` (quickstart), `docs/superpowers/specs|plans/*` (per-feature design/plans),
 > and the upstream API contract this wraps: `../tuneup-api/docs/kap-integration.md`.
@@ -22,8 +22,8 @@
   an allowlisted IP (e.g. `last-index` → 1619964; members 1124; funds 4452; `fund-portfolio-report BON`
   → the 2026-04 report). `fund-portfolio-pdf` downloads the report's attached PDF (reusing the finder's `attachmentUrls` + `download-attachment`'s %PDF unwrap).
 - **How it was built:** brainstorm → spec → plan → subagent-driven TDD, each task spec+quality reviewed,
-  each feature closed by an Opus whole-branch review. Three shipped increments: core CLI (+A+ hardening),
-  ticker/fund utilities, fund-portfolio-report.
+  each feature closed by an Opus whole-branch review. Four shipped increments: core CLI (+A+ hardening),
+  ticker/fund utilities, fund-portfolio-report, fund-portfolio-pdf.
 
 ---
 
@@ -94,7 +94,7 @@ KAP_TEST_API_KEY=<test-key>
 
 ---
 
-## 4. Utilities (7) — composites, NOT raw endpoints
+## 4. Utilities (8) — composites, NOT raw endpoints
 
 Shown in a separate **"Utilities (convenience — not raw API endpoints)"** panel with a magenta
 `composite` tag. Each resolves a ticker/fund and orchestrates several calls.
@@ -217,6 +217,10 @@ allowlisted IP.
 - **2026-06-24 — `fund-portfolio-report`** (`b6aace8`): a fund's Portföy Dağılım Raporu via forward-
   paginated FON scan (so "latest" is the true latest, not a stale window) + subject/behalfFundCode match;
   default latest, `--from/--to` period range; explanatory `--help`.
+- **2026-06-24 — `fund-portfolio-pdf`** (`ceb09cc`): downloads the report's attached PDF — reuses the
+  finder (now surfacing `attachmentUrls`) + the existing `download-attachment` `%PDF` unwrap; `--out` /
+  `--out-dir` (KAP's own filenames, path-safe). DRY'd the shared `--from/--to` validation into
+  `_validate_period_range`. Live-verified (`BON_2026.04.pdf`, valid PDF).
 
 Per-feature specs/plans + reviews are under `docs/superpowers/`. SDD scratch (briefs/reports/diffs) is in
 `.superpowers/` (gitignored).
