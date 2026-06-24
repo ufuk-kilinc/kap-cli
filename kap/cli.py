@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shutil
 import sys
 from collections.abc import Callable, Iterator
@@ -14,7 +15,15 @@ from kap.client import KapClient
 from kap.config import load_config
 from kap.errors import KapError
 from kap.render import decode_disclosure_bodies, output, validate_format
-from kap.utils import resolve_company, resolve_fund, resolve_one, scan_disclosures, ScanResult
+from kap.utils import (
+    PortfolioReportResult,
+    ScanResult,
+    find_fund_portfolio_reports,
+    resolve_company,
+    resolve_fund,
+    resolve_one,
+    scan_disclosures,
+)
 
 # Force UTF-8 so Turkish help text and disclosure data never crash on a
 # cp1252 (default Windows) terminal.
@@ -505,3 +514,59 @@ def fund_disclosures_cmd(
             fund = resolve_one(resolve_fund(client, query), query, "fund", _describe_fund)
             result = scan_disclosures(client, fund["fundCompanyId"], limit)
         _render_scan(fmt, out, result)
+
+
+_PERIOD_RE_CLI = re.compile(r"^\d{4}-\d{2}$")
+
+
+@app.command(
+    "fund-portfolio-report",
+    rich_help_panel=_UTIL_PANEL,
+    short_help="[magenta]composite[/magenta]  fund → Portföy Dağılım Raporu",
+)
+def fund_portfolio_report_cmd(
+    query: _FUND_ARG,
+    from_period: Annotated[Optional[str], typer.Option("--from", help="Start report period, YYYY-MM.")] = None,
+    to_period: Annotated[Optional[str], typer.Option("--to", help="End report period, YYYY-MM.")] = None,
+    env: EnvOpt = None,
+    fmt: FormatOpt = None,
+    out: OutOpt = None,
+    verbose: VerboseOpt = False,
+):
+    """Composite utility (not a single endpoint). A fund's Portföy Dağılım Raporu (portfolio allocation report).
+
+    What it does: (1) resolves the fund to its management-company id via GET /api/vyk/funds; (2) reads the
+    latest index via GET /api/vyk/lastDisclosureIndex; (3) scans that company's disclosures backward
+    (GET /api/vyk/disclosures, forward-paginated per window so recent filings aren't missed), keeping
+    disclosureType=FON; (4) opens each candidate (GET /api/vyk/disclosureDetail) and keeps those whose
+    subject is "Portföy Dağılım Raporu" for THIS fund. No range returns the latest report; --from/--to
+    (YYYY-MM, by report period) return all in that range. Note: this fans out into many detail calls, so a
+    wide range can be slow.
+
+    Example: kap fund-portfolio-report BON
+    Example: kap fund-portfolio-report BON --from 2026-01 --to 2026-06
+    """
+    for label, value in (("--from", from_period), ("--to", to_period)):
+        if value is not None and not _PERIOD_RE_CLI.match(value):
+            raise typer.BadParameter(f"{label} must be YYYY-MM, got '{value}'")
+    if from_period and to_period and from_period > to_period:
+        raise typer.BadParameter(f"--from ({from_period}) is after --to ({to_period})")
+    with _errors(verbose):
+        validate_format(fmt)
+        with _make_client(env) as client:
+            fund = resolve_one(resolve_fund(client, query), query, "fund", _describe_fund)
+            result = find_fund_portfolio_reports(
+                client, fund["fundCode"], fund["fundCompanyId"],
+                from_period=from_period, to_period=to_period,
+            )
+        if not result.items:
+            _err_console.print(
+                f"[yellow]No Portföy Dağılım Raporu found for '{query}' in the scanned range.[/yellow]"
+            )
+            raise typer.Exit(code=1)
+        if result.truncated:
+            _err_console.print(
+                "[yellow]Note:[/yellow] scan bound hit (max windows/details); results may be "
+                "incomplete — narrow the --from/--to range."
+            )
+        output(result.items, fmt=fmt, out=out)

@@ -3,6 +3,7 @@ from typer.testing import CliRunner
 
 import kap.cli as cli
 from kap.errors import KapApiError
+from kap.utils import PortfolioReportResult
 
 runner = CliRunner()
 
@@ -239,3 +240,32 @@ def test_unknown_ticker_exits_with_message(fake_client):
     result = runner.invoke(cli.app, ["ticker-disclosures", "ZZZZ"])
     assert result.exit_code == 1
     assert "No ticker matching" in result.stderr
+
+
+def test_fund_portfolio_report_returns_latest(fake_client, monkeypatch):
+    monkeypatch.setattr(
+        cli, "find_fund_portfolio_reports",
+        lambda *a, **k: PortfolioReportResult(
+            items=[{"disclosureIndex": 90, "period": "2026-03", "fundCode": "BON",
+                    "fundTitle": "T", "presentation": [{"alloc": 1}]}],
+            truncated=False, details_fetched=3),
+    )
+    result = runner.invoke(cli.app, ["fund-portfolio-report", "BON", "--format", "json"])
+    assert result.exit_code == 0
+    assert '"disclosureIndex": 90' in result.stdout
+
+
+def test_fund_portfolio_report_not_found_exits_1(fake_client, monkeypatch):
+    monkeypatch.setattr(
+        cli, "find_fund_portfolio_reports",
+        lambda *a, **k: PortfolioReportResult(items=[], truncated=False, details_fetched=0),
+    )
+    result = runner.invoke(cli.app, ["fund-portfolio-report", "BON"])
+    assert result.exit_code == 1
+    assert "No Portföy Dağılım Raporu" in result.stderr
+
+
+def test_fund_portfolio_report_bad_period_format(fake_client):
+    result = runner.invoke(cli.app, ["fund-portfolio-report", "BON", "--from", "2026-1"])
+    assert result.exit_code != 0
+    assert "YYYY-MM" in (result.stderr + result.stdout)
