@@ -275,3 +275,66 @@ def test_fund_portfolio_report_from_after_to(fake_client):
     result = runner.invoke(cli.app, ["fund-portfolio-report", "BON", "--from", "2026-06", "--to", "2026-01"])
     assert result.exit_code != 0
     assert "after" in (result.stderr + result.stdout)
+
+
+def _pdf_result(items):
+    return PortfolioReportResult(items=items, truncated=False, details_fetched=len(items))
+
+
+def _report(idx, period, name="BON_%s.pdf", atts=True):
+    fn = name % period if "%s" in name else name
+    return {
+        "disclosureIndex": idx, "period": period, "fundCode": "BON", "fundTitle": "T",
+        "attachmentUrls": [{"url": f"https://h/api/vyk/downloadAttachment/AID{idx}", "fileName": fn}] if atts else [],
+        "presentation": [],
+    }
+
+
+def test_fund_portfolio_pdf_single_to_out_dir(fake_client, monkeypatch, tmp_path):
+    monkeypatch.setattr(cli, "find_fund_portfolio_reports", lambda *a, **k: _pdf_result([_report(90, "2026-04")]))
+    result = runner.invoke(cli.app, ["fund-portfolio-pdf", "BON", "--out-dir", str(tmp_path)])
+    assert result.exit_code == 0
+    saved = tmp_path / "BON_2026-04.pdf"
+    assert saved.read_bytes() == b"%PDF-1.7 bytes"
+
+
+def test_fund_portfolio_pdf_single_to_out_file(fake_client, monkeypatch, tmp_path):
+    monkeypatch.setattr(cli, "find_fund_portfolio_reports", lambda *a, **k: _pdf_result([_report(90, "2026-04")]))
+    target = tmp_path / "latest.pdf"
+    result = runner.invoke(cli.app, ["fund-portfolio-pdf", "BON", "--out", str(target)])
+    assert result.exit_code == 0
+    assert target.read_bytes() == b"%PDF-1.7 bytes"
+
+
+def test_fund_portfolio_pdf_multiple_to_out_dir(fake_client, monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        cli, "find_fund_portfolio_reports",
+        lambda *a, **k: _pdf_result([_report(90, "2026-04"), _report(60, "2026-03")]),
+    )
+    result = runner.invoke(cli.app, ["fund-portfolio-pdf", "BON", "--out-dir", str(tmp_path)])
+    assert result.exit_code == 0
+    assert (tmp_path / "BON_2026-04.pdf").exists() and (tmp_path / "BON_2026-03.pdf").exists()
+
+
+def test_fund_portfolio_pdf_out_with_multiple_rejected(fake_client, monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        cli, "find_fund_portfolio_reports",
+        lambda *a, **k: _pdf_result([_report(90, "2026-04"), _report(60, "2026-03")]),
+    )
+    result = runner.invoke(cli.app, ["fund-portfolio-pdf", "BON", "--out", str(tmp_path / "x.pdf")])
+    assert result.exit_code != 0
+    assert "out-dir" in (result.stderr + result.stdout)
+
+
+def test_fund_portfolio_pdf_no_attachment_exits_1(fake_client, monkeypatch):
+    monkeypatch.setattr(cli, "find_fund_portfolio_reports", lambda *a, **k: _pdf_result([_report(90, "2026-04", atts=False)]))
+    result = runner.invoke(cli.app, ["fund-portfolio-pdf", "BON"])
+    assert result.exit_code == 1
+    assert "No PDF attachments" in result.stderr
+
+
+def test_fund_portfolio_pdf_not_found_exits_1(fake_client, monkeypatch):
+    monkeypatch.setattr(cli, "find_fund_portfolio_reports", lambda *a, **k: _pdf_result([]))
+    result = runner.invoke(cli.app, ["fund-portfolio-pdf", "BON"])
+    assert result.exit_code == 1
+    assert "No Portföy Dağılım Raporu" in result.stderr
