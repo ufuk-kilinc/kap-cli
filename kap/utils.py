@@ -144,3 +144,92 @@ def _enumerate_window(client: KapClient, company_id: str | int, win_start: int, 
             break
         cur = hi + 1
     return rows
+
+
+@dataclass
+class PortfolioReportResult:
+    items: list[JsonObj]
+    truncated: bool
+    details_fetched: int
+
+
+def find_fund_portfolio_reports(
+    client: KapClient,
+    fund_code: str,
+    company_id: str | int,
+    *,
+    from_period: str | None = None,
+    to_period: str | None = None,
+    window: int = 36000,
+    max_windows: int = 60,
+    max_details: int = 400,
+) -> PortfolioReportResult:
+    """Find a fund's Portföy Dağılım Raporu disclosure(s).
+
+    Scans the management company's disclosures backward (newest window first), forward-paginating
+    each window, and opens FON candidates newest-first to match subject + behalfFundCode. No range →
+    the latest report (stops at first match); a range → all matches with period in [from, to].
+    """
+    target = str(fund_code).strip().upper()
+    last = client.last_disclosure_index()
+    range_mode = from_period is not None or to_period is not None
+    items: list[JsonObj] = []
+    seen: set[int] = set()
+    details = 0
+    truncated = False
+    done = False
+    win_end = last
+    windows = 0
+
+    while win_end >= 0 and windows < max_windows and not done:
+        win_start = max(0, win_end - window)
+        rows = _enumerate_window(client, company_id, win_start, win_end)
+        fon = sorted(
+            (r for r in rows if r.get("disclosureType") == "FON"),
+            key=lambda r: int(r["disclosureIndex"]),
+            reverse=True,
+        )
+        for row in fon:
+            idx = int(row["disclosureIndex"])
+            if idx in seen:
+                continue
+            if details >= max_details:
+                truncated = done = True
+                break
+            detail = client.disclosure_detail(idx)
+            details += 1
+            if not detail:
+                continue
+            subject = detail.get("subject") if isinstance(detail, dict) else None
+            subj_tr = subject.get("tr") if isinstance(subject, dict) else None
+            if subj_tr != _PDR_SUBJECT:
+                continue
+            if str(detail.get("behalfFundCode") or "").strip().upper() != target:
+                continue
+            period = parse_report_period(detail)
+            item: JsonObj = {
+                "disclosureIndex": idx,
+                "period": period,
+                "fundCode": detail.get("behalfFundCode"),
+                "fundTitle": detail.get("behalfFundTitle"),
+                "presentation": detail.get("presentation"),
+            }
+            if not range_mode:
+                return PortfolioReportResult(items=[item], truncated=False, details_fetched=details)
+            if from_period is not None and period is not None and period < from_period:
+                done = True
+                break
+            if to_period is not None and period is not None and period > to_period:
+                continue  # newer than the range; keep scanning back
+            if period is None:
+                continue  # can't place an undated report in a range
+            seen.add(idx)
+            items.append(item)
+        if win_start == 0:
+            break
+        win_end = win_start - 1
+        windows += 1
+
+    if windows >= max_windows and not done:
+        truncated = True
+    return PortfolioReportResult(items=items, truncated=truncated, details_fetched=details)
