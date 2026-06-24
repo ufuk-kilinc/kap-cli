@@ -1,6 +1,6 @@
 import pytest
 
-from kap.utils import ScanResult, resolve_company, resolve_fund, resolve_one, scan_disclosures
+from kap.utils import ScanResult, parse_report_period, _enumerate_window, resolve_company, resolve_fund, resolve_one, scan_disclosures
 
 
 class FakeClient:
@@ -149,3 +149,33 @@ def test_scan_all_empty_pages_returns_empty():
     client = FakeClient(pages={}, last=200)
     result = scan_disclosures(client, "C", limit=5, window=50, max_windows=3)
     assert result.items == [] and result.windows == 3
+
+
+def _fon(idx):
+    return {"disclosureIndex": str(idx), "disclosureType": "FON"}
+
+
+def test_parse_report_period_from_summary():
+    detail = {"summary": {"tr": "2026 / 3.Ay Portföy Dağılım Raporu\n", "en": None}}
+    assert parse_report_period(detail) == "2026-03"
+
+
+def test_parse_report_period_none_on_garbage():
+    assert parse_report_period({"summary": {"tr": "nope"}}) is None
+    assert parse_report_period({}) is None
+
+
+def test_enumerate_window_paginates_past_50_cap():
+    # company has 60 rows (1..60); a single call caps at 50, so we must page to get all
+    pages = {1: [_fon(i) for i in range(1, 51)], 51: [_fon(i) for i in range(51, 61)]}
+    client = FakeClient(pages=pages)
+    rows = _enumerate_window(client, "C", 1, 100)
+    got = sorted(int(r["disclosureIndex"]) for r in rows)
+    assert got == list(range(1, 61))  # nothing lost; 60 collected via 2 pages
+
+
+def test_enumerate_window_excludes_beyond_win_end():
+    pages = {1: [_fon(1), _fon(2), _fon(250)]}
+    client = FakeClient(pages=pages)
+    rows = _enumerate_window(client, "C", 1, 100)
+    assert [int(r["disclosureIndex"]) for r in rows] == [1, 2]  # 250 > win_end dropped

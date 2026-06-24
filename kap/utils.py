@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -107,3 +108,39 @@ def scan_disclosures(
         start = max(0, start - window)
     ordered = [item for _, item in sorted(found.items(), key=lambda kv: kv[0], reverse=True)]
     return ScanResult(items=ordered[:limit], truncated=truncated, windows=windows)
+
+
+_PERIOD_RE = re.compile(r"(\d{4})\s*/\s*(\d+)\s*\.?\s*Ay")
+_PDR_SUBJECT = "Portföy Dağılım Raporu"
+
+
+def parse_report_period(detail: JsonObj) -> str | None:
+    """Extract the report period as 'YYYY-MM' from a disclosure detail's Turkish summary."""
+    summary = detail.get("summary") if isinstance(detail, dict) else None
+    text = summary.get("tr") if isinstance(summary, dict) else None
+    if not isinstance(text, str):
+        return None
+    match = _PERIOD_RE.search(text)
+    if not match:
+        return None
+    return f"{match.group(1)}-{int(match.group(2)):02d}"
+
+
+def _enumerate_window(client: KapClient, company_id: str | int, win_start: int, win_end: int) -> list[JsonObj]:
+    """All of a company's disclosure rows with win_start <= disclosureIndex <= win_end.
+
+    Forward-paginates (cur -> max index + 1) so it isn't limited by the API's 50-row page cap.
+    """
+    cur = win_start
+    rows: list[JsonObj] = []
+    while cur <= win_end:
+        page = client.disclosures(cur, company_id=company_id)
+        page = [r for r in page if int(r["disclosureIndex"]) <= win_end]
+        if not page:
+            break
+        rows.extend(page)
+        hi = max(int(r["disclosureIndex"]) for r in page)
+        if len(page) < 50 or hi <= cur:
+            break
+        cur = hi + 1
+    return rows
