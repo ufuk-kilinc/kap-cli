@@ -362,3 +362,17 @@ def test_download_attachment_out_directory(fake_client, tmp_path):
     result = runner.invoke(cli.app, ["download-attachment", "abc", "--out", str(tmp_path)])
     assert result.exit_code == 0
     assert (tmp_path / "abc.pdf").read_bytes() == b"%PDF-1.7 bytes"
+
+
+def test_members_out_creates_missing_parent_dirs(fake_client, tmp_path):
+    target = tmp_path / "sub" / "deep" / "m.json"
+    result = runner.invoke(cli.app, ["members", "--format", "json", "--out", str(target)])
+    assert result.exit_code == 0
+    assert target.exists()
+
+
+def test_download_attachment_creates_missing_parent_dirs(fake_client, tmp_path):
+    target = tmp_path / "pdfs" / "x.pdf"
+    result = runner.invoke(cli.app, ["download-attachment", "abc", "--out", str(target)])
+    assert result.exit_code == 0
+    assert target.read_bytes() == b"%PDF-1.7 bytes"

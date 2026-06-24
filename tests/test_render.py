@@ -115,3 +115,9 @@ def test_output_to_explicit_file_unchanged(tmp_path):
     target = tmp_path / "x.json"
     output([{"a": 1}], out=target)
     assert json.loads(target.read_text(encoding="utf-8")) == [{"a": 1}]
+
+
+def test_output_creates_missing_parent_dirs(tmp_path):
+    target = tmp_path / "reports" / "members" / "m.json"
+    output([{"a": 1}], out=target)
+    assert json.loads(target.read_text(encoding="utf-8")) == [{"a": 1}]

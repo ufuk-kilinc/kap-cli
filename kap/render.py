@@ -126,6 +126,7 @@ def _strip_html(html: str) -> str:
 
 def _write_text(text: str, out: Path | None) -> None:
     if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(text, encoding="utf-8")
     else:
         print(text)
