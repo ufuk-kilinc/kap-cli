@@ -535,16 +535,23 @@ def fund_portfolio_report_cmd(
 ):
     """Composite utility (not a single endpoint). A fund's Portföy Dağılım Raporu (portfolio allocation report).
 
-    What it does: (1) resolves the fund to its management-company id via GET /api/vyk/funds; (2) reads the
-    latest index via GET /api/vyk/lastDisclosureIndex; (3) scans that company's disclosures backward
-    (GET /api/vyk/disclosures, forward-paginated per window so recent filings aren't missed), keeping
-    disclosureType=FON; (4) opens each candidate (GET /api/vyk/disclosureDetail) and keeps those whose
-    subject is "Portföy Dağılım Raporu" for THIS fund. No range returns the latest report; --from/--to
-    (YYYY-MM, by report period) return all in that range. Note: this fans out into many detail calls, so a
-    wide range can be slow.
+    What it does:
 
-    Example: kap fund-portfolio-report BON
-    Example: kap fund-portfolio-report BON --from 2026-01 --to 2026-06
+    1. Resolve the fund to its management-company id — GET /api/vyk/funds
+
+    2. Read the latest disclosure index — GET /api/vyk/lastDisclosureIndex
+
+    3. Scan that company's disclosures backward (forward-paginated per window so recent filings aren't missed), keeping disclosureType=FON — GET /api/vyk/disclosures
+
+    4. Open each candidate and keep those whose subject is "Portföy Dağılım Raporu" for THIS fund — GET /api/vyk/disclosureDetail
+
+    No range returns the latest report; --from/--to (YYYY-MM, by report period) return all in that range. Note: this fans out into many detail calls, so a wide range can be slow.
+
+    Examples:
+
+    kap fund-portfolio-report BON
+
+    kap fund-portfolio-report BON --from 2026-01 --to 2026-06
     """
     for label, value in (("--from", from_period), ("--to", to_period)):
         if value is not None and not _PERIOD_RE_CLI.match(value):
