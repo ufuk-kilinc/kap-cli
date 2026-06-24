@@ -1,14 +1,16 @@
 import pytest
 
-from kap.utils import ScanResult, resolve_company, resolve_fund, resolve_one, scan_disclosures
+from kap.utils import ScanResult, parse_report_period, _enumerate_window, resolve_company, resolve_fund, resolve_one, scan_disclosures
+from kap.utils import PortfolioReportResult, find_fund_portfolio_reports
 
 
 class FakeClient:
-    def __init__(self, members=None, funds=None, pages=None, last=0):
+    def __init__(self, members=None, funds=None, pages=None, last=0, details=None):
         self._members = members or []
         self._funds = funds or []
         self._pages = pages or {}
         self._last = last
+        self._details = details or {}
         self.calls = []
 
     def members(self):
@@ -23,6 +25,9 @@ class FakeClient:
     def disclosures(self, index, *, disclosure_type=None, disclosure_class=None, company_id=None):
         self.calls.append((index, disclosure_class, company_id))
         return self._pages.get(index, [])
+
+    def disclosure_detail(self, index, file_type="data", sub_report=None):
+        return self._details.get(int(index))
 
 
 _MEMBERS = [
@@ -149,3 +154,93 @@ def test_scan_all_empty_pages_returns_empty():
     client = FakeClient(pages={}, last=200)
     result = scan_disclosures(client, "C", limit=5, window=50, max_windows=3)
     assert result.items == [] and result.windows == 3
+
+
+def _fon(idx):
+    return {"disclosureIndex": str(idx), "disclosureType": "FON"}
+
+
+def test_parse_report_period_from_summary():
+    detail = {"summary": {"tr": "2026 / 3.Ay Portföy Dağılım Raporu\n", "en": None}}
+    assert parse_report_period(detail) == "2026-03"
+
+
+def test_parse_report_period_none_on_garbage():
+    assert parse_report_period({"summary": {"tr": "nope"}}) is None
+    assert parse_report_period({}) is None
+
+
+def test_enumerate_window_paginates_past_50_cap():
+    # company has 60 rows (1..60); a single call caps at 50, so we must page to get all
+    pages = {1: [_fon(i) for i in range(1, 51)], 51: [_fon(i) for i in range(51, 61)]}
+    client = FakeClient(pages=pages)
+    rows = _enumerate_window(client, "C", 1, 100)
+    got = sorted(int(r["disclosureIndex"]) for r in rows)
+    assert got == list(range(1, 61))  # nothing lost; 60 collected via 2 pages
+
+
+def test_enumerate_window_excludes_beyond_win_end():
+    pages = {1: [_fon(1), _fon(2), _fon(250)]}
+    client = FakeClient(pages=pages)
+    rows = _enumerate_window(client, "C", 1, 100)
+    assert [int(r["disclosureIndex"]) for r in rows] == [1, 2]  # 250 > win_end dropped
+
+
+def _pdr_detail(idx, fund_code, period_text, fund_title="FUND"):
+    return {
+        "disclosureIndex": str(idx),
+        "subject": {"tr": "Portföy Dağılım Raporu", "en": "Portfolio Allocation Report"},
+        "summary": {"tr": f"{period_text} Portföy Dağılım Raporu\n"},
+        "behalfFundCode": fund_code,
+        "behalfFundTitle": fund_title,
+        "presentation": [{"alloc": idx}],
+    }
+
+
+def _make_finder_client():
+    # one window [0,100]; FON rows 30,60,90 (BON PDRs), 95 (CBD PDR), 99 (FON non-PDR)
+    pages = {0: [_fon(30), _fon(60), _fon(90), _fon(95), _fon(99)]}
+    details = {
+        30: _pdr_detail(30, "BON", "2025 / 12.Ay"),
+        60: _pdr_detail(60, "BON", "2026 / 2.Ay"),
+        90: _pdr_detail(90, "BON", "2026 / 3.Ay"),
+        95: _pdr_detail(95, "CBD", "2026 / 3.Ay"),
+        99: {"disclosureIndex": "99", "subject": {"tr": "Komisyon Bilgileri"}, "behalfFundCode": "BON"},
+    }
+    return FakeClient(pages=pages, details=details, last=100)
+
+
+def test_finder_latest_returns_newest_match_and_stops():
+    client = _make_finder_client()
+    result = find_fund_portfolio_reports(client, "BON", "C", window=1000)
+    assert isinstance(result, PortfolioReportResult)
+    assert [i["disclosureIndex"] for i in result.items] == [90]
+    assert result.items[0]["period"] == "2026-03"
+    assert result.truncated is False
+    # newest-first probe: fetched 99, 95, 90 (stops at 90) — not the older 60/30
+    assert result.details_fetched == 3
+
+
+def test_finder_range_collects_in_period_window():
+    client = _make_finder_client()
+    result = find_fund_portfolio_reports(client, "BON", "C", from_period="2026-01", to_period="2026-12", window=1000)
+    assert [i["disclosureIndex"] for i in result.items] == [90, 60]  # 30 is 2025-12, below from
+
+
+def test_finder_excludes_other_fund_and_non_pdr():
+    client = _make_finder_client()
+    result = find_fund_portfolio_reports(client, "CBD", "C", window=1000)
+    assert [i["disclosureIndex"] for i in result.items] == [95]
+
+
+def test_finder_truncates_on_max_details():
+    client = _make_finder_client()
+    result = find_fund_portfolio_reports(client, "BON", "C", from_period="2000-01", to_period="2999-12", window=1000, max_details=1)
+    assert result.truncated is True
+
+
+def test_enumerate_window_skips_unparseable_index():
+    pages = {1: [{"disclosureType": "FON"}, _fon(2)]}  # first row has no disclosureIndex
+    client = FakeClient(pages=pages)
+    rows = _enumerate_window(client, "C", 1, 100)
+    assert [int(r["disclosureIndex"]) for r in rows] == [2]
