@@ -23,6 +23,7 @@ venv/
 
 # Downloaded attachments / probe output
 *.pdf
+!docs/getting-started.pdf
 kap-probe-output/
 
 # SDD scratch (briefs, reports, review diffs, progress ledger)
