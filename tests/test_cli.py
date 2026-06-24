@@ -338,3 +338,10 @@ def test_fund_portfolio_pdf_not_found_exits_1(fake_client, monkeypatch):
     result = runner.invoke(cli.app, ["fund-portfolio-pdf", "BON"])
     assert result.exit_code == 1
     assert "No Portföy Dağılım Raporu" in result.stderr
+
+
+def test_fund_portfolio_pdf_download_none_exits_1(fake_client, monkeypatch, tmp_path):
+    monkeypatch.setattr(cli, "find_fund_portfolio_reports", lambda *a, **k: _pdf_result([_report(90, "2026-04")]))
+    monkeypatch.setattr(fake_client, "download_attachment", lambda attachment_id: None, raising=False)
+    result = runner.invoke(cli.app, ["fund-portfolio-pdf", "BON", "--out-dir", str(tmp_path)])
+    assert result.exit_code == 1

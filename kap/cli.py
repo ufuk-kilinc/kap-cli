@@ -520,6 +520,15 @@ def fund_disclosures_cmd(
 _PERIOD_RE_CLI = re.compile(r"^\d{4}-\d{2}$")
 
 
+def _validate_period_range(from_period: Optional[str], to_period: Optional[str]) -> None:
+    """Validate --from/--to are YYYY-MM and correctly ordered (raises typer.BadParameter)."""
+    for label, value in (("--from", from_period), ("--to", to_period)):
+        if value is not None and not _PERIOD_RE_CLI.match(value):
+            raise typer.BadParameter(f"{label} must be YYYY-MM, got '{value}'")
+    if from_period is not None and to_period is not None and from_period > to_period:
+        raise typer.BadParameter(f"--from ({from_period}) is after --to ({to_period})")
+
+
 @app.command(
     "fund-portfolio-report",
     rich_help_panel=_UTIL_PANEL,
@@ -554,11 +563,7 @@ def fund_portfolio_report_cmd(
 
     kap fund-portfolio-report BON --from 2026-01 --to 2026-06
     """
-    for label, value in (("--from", from_period), ("--to", to_period)):
-        if value is not None and not _PERIOD_RE_CLI.match(value):
-            raise typer.BadParameter(f"{label} must be YYYY-MM, got '{value}'")
-    if from_period is not None and to_period is not None and from_period > to_period:
-        raise typer.BadParameter(f"--from ({from_period}) is after --to ({to_period})")
+    _validate_period_range(from_period, to_period)
     with _errors(verbose):
         validate_format(fmt)
         with _make_client(env) as client:
@@ -614,12 +619,7 @@ def fund_portfolio_pdf_cmd(
 
     kap fund-portfolio-pdf BON --from 2026-01 --to 2026-06 --out-dir reports
     """
-    for label, value in (("--from", from_period), ("--to", to_period)):
-        if value is not None and not _PERIOD_RE_CLI.match(value):
-            raise typer.BadParameter(f"{label} must be YYYY-MM, got '{value}'")
-    if from_period is not None and to_period is not None and from_period > to_period:
-        raise typer.BadParameter(f"--from ({from_period}) is after --to ({to_period})")
-
+    _validate_period_range(from_period, to_period)
     with _errors(verbose):
         with _make_client(env) as client:
             fund = resolve_one(resolve_fund(client, query), query, "fund", _describe_fund)
@@ -637,8 +637,8 @@ def fund_portfolio_pdf_cmd(
             for item in result.items:
                 atts = item.get("attachmentUrls") or []
                 if not atts:
-                    label = item.get("period") or item["disclosureIndex"]
-                    _err_console.print(f"[yellow]Note:[/yellow] {label} has no PDF attachment — skipped.")
+                    tag = item.get("period") or item["disclosureIndex"]
+                    _err_console.print(f"[yellow]Note:[/yellow] {tag} has no PDF attachment — skipped.")
                     continue
                 for att in atts:
                     url = att.get("url")
