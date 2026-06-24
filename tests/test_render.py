@@ -93,3 +93,25 @@ def test_decode_disclosure_bodies_marks_undecodable_as_none():
     detail = {"htmlMessages": [{"id": 1, "tr": "!!!not base64!!!", "en": None}]}
     out = decode_disclosure_bodies(detail)
     assert out["htmlMessages"][0]["tr_text"] is None
+
+
+def test_output_to_directory_auto_names_json(tmp_path):
+    output([{"a": 1}], out=tmp_path, default_stem="disclosures")
+    saved = tmp_path / "disclosures.json"
+    assert json.loads(saved.read_text(encoding="utf-8")) == [{"a": 1}]
+
+
+def test_output_to_directory_csv_ext(tmp_path):
+    output([{"a": 1}], fmt="csv", out=tmp_path, default_stem="members")
+    assert (tmp_path / "members.csv").exists()
+
+
+def test_output_to_directory_prints_saved_path(tmp_path, capsys):
+    output([{"a": 1}], out=tmp_path, default_stem="funds")
+    assert "Saved to" in capsys.readouterr().out
+
+
+def test_output_to_explicit_file_unchanged(tmp_path):
+    target = tmp_path / "x.json"
+    output([{"a": 1}], out=target)
+    assert json.loads(target.read_text(encoding="utf-8")) == [{"a": 1}]
