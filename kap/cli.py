@@ -168,6 +168,7 @@ def _save_bytes(
             target = out / default_name
         else:
             target = out or Path(default_name)
+        target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
         print(f"Saved {len(data)} bytes to {target.resolve()}")
 
@@ -679,6 +680,7 @@ def fund_portfolio_pdf_cmd(
                 if data is None:
                     _err_console.print(f"[yellow]Note:[/yellow] attachment {att_id} not found — skipped.")
                     continue
+                target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(data)
                 print(f"Saved {target.resolve()} ({len(data)} bytes)")
                 saved += 1
