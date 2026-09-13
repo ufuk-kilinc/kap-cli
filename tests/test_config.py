@@ -9,12 +9,9 @@ def _settings(**kw):
     return Settings(**defaults)
 
 
-def test_resolve_test_env_returns_test_url_and_key():
-    cfg = _settings(active_env="test", test_api_key="tkey").resolve()
-    assert isinstance(cfg, ResolvedConfig)
-    assert cfg.env == "test"
-    assert cfg.base_url == "https://vykapipreprod.mkk.com.tr"
-    assert cfg.api_key == "tkey"
+def test_resolve_refuses_test_even_when_its_key_is_configured():
+    with pytest.raises(ValueError, match="Production KAP API"):
+        _settings(active_env="test", test_api_key="tkey").resolve()
 
 
 def test_resolve_production_aliases():
@@ -25,21 +22,26 @@ def test_resolve_production_aliases():
         assert cfg.api_key == "pkey"
 
 
-def test_env_override_beats_active_env():
+def test_production_override_beats_active_env():
     cfg = _settings(active_env="test", prod_api_key="pkey").resolve("production")
     assert cfg.env == "production"
 
 
 def test_missing_api_key_raises_with_helpful_message():
-    with pytest.raises(ValueError, match="KAP_TEST_API_KEY"):
-        _settings(active_env="test", test_api_key="").resolve()
+    with pytest.raises(ValueError, match="KAP_PROD_API_KEY"):
+        _settings(active_env="production", prod_api_key="").resolve()
 
 
 def test_unknown_env_raises():
-    with pytest.raises(ValueError, match="Unknown env"):
+    with pytest.raises(ValueError, match="Production KAP API"):
         _settings(active_env="staging").resolve()
 
 
-def test_base_url_trailing_slash_stripped():
-    cfg = _settings(active_env="test", test_base_url="https://x/", test_api_key="k").resolve()
-    assert cfg.base_url == "https://x"
+@pytest.mark.parametrize("base_url", [
+    "http://kapdatafeed.kap.org.tr",
+    "https://evil.example",
+    "https://kapdatafeed.kap.org.tr/unexpected-path",
+])
+def test_resolve_refuses_non_production_destination(base_url):
+    with pytest.raises(ValueError, match="Production KAP API"):
+        _settings(active_env="production", prod_base_url=base_url, prod_api_key="k").resolve()

@@ -5,7 +5,7 @@ from typing import Any, Literal, TypedDict
 import httpx
 
 from kap.auth import TokenProvider
-from kap.config import ResolvedConfig
+from kap.config import ResolvedConfig, require_production_base_url
 from kap.errors import KapApiError, KapConnectivityError, KapResponseError
 
 # A parsed JSON object from the KAP API. The upstream payloads are variable and
@@ -135,6 +135,7 @@ class KapClient:
         metadata + body. Unlike the typed methods, this does NOT retry on token
         errors and does NOT raise on non-2xx — the status code and body are returned
         as-is for inspection."""
+        _require_production_relative_path(path)
         resp = self._send(path.lstrip("/"), query)
         return {
             "service": path,
@@ -168,9 +169,16 @@ class KapClient:
         raise err  # pragma: no cover
 
     def _send(self, path: str, params: dict | None) -> httpx.Response:
+        require_production_base_url(self._config.base_url)
+        _require_production_relative_path(path)
         token = self._auth.get_token()
         try:
-            return self._http.get(path, params=params, headers={"Authorization": token})
+            return self._http.get(
+                path,
+                params=params,
+                headers={"Authorization": token},
+                follow_redirects=False,
+            )
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             raise KapConnectivityError(_CONNECTIVITY_HINT) from exc
 
@@ -191,3 +199,18 @@ class KapClient:
             raise KapResponseError(
                 resp.status_code, f"expected a JSON body but got: {resp.text[:200]}"
             ) from exc
+
+
+def _require_production_relative_path(path: str) -> None:
+    candidate = path[1:] if path.startswith("/") and not path.startswith("//") else path
+    first_slash = candidate.find("/")
+    colon = candidate.find(":")
+    if (
+        not candidate
+        or path.startswith("//")
+        or "\\" in candidate
+        or "//" in candidate
+        or any(segment in (".", "..") for segment in candidate.split("/"))
+        or colon >= 0 and (first_slash < 0 or colon < first_slash)
+    ):
+        raise ValueError("KAP request path must stay on the Production KAP API origin.")

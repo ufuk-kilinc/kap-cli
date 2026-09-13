@@ -10,6 +10,7 @@ from typing import TypedDict
 import httpx
 
 from kap.errors import KapApiError, KapResponseError
+from kap.config import require_production_base_url
 
 
 class TokenCache(TypedDict):
@@ -69,8 +70,11 @@ class TokenProvider:
         return time.time() >= (expires_at - self._skew)
 
     def _mint(self) -> str:
+        require_production_base_url(self._base_url)
         resp = self._http.get(
-            f"{self._base_url}/auth/generateToken", params={"apiKey": self._api_key}
+            f"{self._base_url}/auth/generateToken",
+            params={"apiKey": self._api_key},
+            follow_redirects=False,
         )
         if not resp.is_success:
             raise KapApiError.from_body(resp.status_code, resp.text)
