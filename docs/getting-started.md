@@ -56,6 +56,11 @@ cd kap-cli
 ```
 pip install -e .
 ```
+⚠️ **Type it exactly — including the space and the dot at the end.** That final `.` means "this folder" and is required. If you leave it off, pip stops with `-e option requires 1 argument`. If the single dot is easy to miss, you can instead spell out the full folder (works from anywhere, nothing to drop):
+```
+pip install -e C:\kap\kap-cli
+```
+
 You'll know it worked: the output ends with `Successfully installed kap-cli` (and a version number).
 
 **Step 5 — Add your API key.**
@@ -136,6 +141,9 @@ Claude Code already knows the project's structure and rules from the built-in me
 ---
 
 ## 6. If something doesn't work
+
+**`pip install` shows a "Usage:" block and `-e option requires 1 argument`**
+You dropped the `.` at the end of the install command. Run it again with the trailing dot — `pip install -e .` — making sure there is a space and then a dot after `-e`. (Or use the full-path form: `pip install -e C:\kap\kap-cli`.)
 
 **`kap` not recognized**
 Close and reopen the terminal, then try again. Or use `python -m kap …` as a drop-in replacement for any command (e.g. `python -m kap members`).
